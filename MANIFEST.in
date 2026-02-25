@@ -1,0 +1,4 @@
+include README.md
+include LICENSE
+recursive-include knowledge_run_generator/blue_book_demo *.txt *.json
+recursive-include knowledge_run_generator/comparator/data *.json
