@@ -11,6 +11,15 @@ GRAPH_FILENAME = "london_drive_v2.graphml"
 
 ox.settings.cache_folder = "/tmp/ox_cache"
 
+
+def _best_edge_data(edge_bundle):
+    """
+    Return the shortest parallel edge data dict from a MultiDiGraph edge bundle.
+    """
+    if not edge_bundle:
+        return None
+    return min(edge_bundle.values(), key=lambda d: d.get("length", float("inf")))
+
 def load_graph(place_name="Greater London, UK"):
     """
     Load the street network graph for the given place name.
@@ -325,10 +334,11 @@ def _extract_route_metadata(G, route_nodes):
     streets = []
     for i in range(len(route_nodes) - 1):
         edge = G.get_edge_data(route_nodes[i], route_nodes[i + 1])
-        if edge:
-            d = edge[0].get('length', 0)
+        best = _best_edge_data(edge)
+        if best:
+            d = best.get('length', 0)
             total_dist += d
-            name = edge[0].get('name', 'Unknown Road')
+            name = best.get('name', 'Unknown Road')
             if isinstance(name, list):
                 name = name[0]
             if not streets or streets[-1] != name:
@@ -355,7 +365,7 @@ def nodes_to_coords_geometry(G, nodes):
 
         data = G.get_edge_data(u, v)
         if data:
-            edge = data[0]
+            edge = _best_edge_data(data)
             if 'geometry' in edge:
                 seg_coords = [[p[0], p[1]] for p in edge['geometry'].coords]
                 if coords:
