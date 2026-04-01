@@ -7,9 +7,65 @@ from pathlib import Path
 from shapely.geometry import Point, LineString
 
 CACHE_DIR = Path("/tmp/app_cache")
-GRAPH_FILENAME = "london_drive_v2.graphml"
+GRAPH_FILENAME_TEMPLATE = "london_{network_type}_v3.graphml"
 
 ox.settings.cache_folder = "/tmp/ox_cache"
+
+SERVICE_HIGHWAYS = {
+    "service",
+    "living_street",
+    "track",
+    "unclassified",
+}
+
+LINK_HIGHWAYS = {
+    "motorway_link",
+    "trunk_link",
+    "primary_link",
+}
+
+
+def _normalise_tag_values(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v).lower().strip() for v in value if str(v).strip()]
+    return [str(value).lower().strip()]
+
+
+def _edge_traversal_cost(edge_data, prev_node=None, next_node=None,
+                         dist_u_to_target=None, dist_v_to_target=None):
+    """
+    Cost model tuned for cab-legal routing in dense divided-carriageway areas.
+    """
+    length = float(edge_data.get("length", 1.0) or 1.0)
+    penalty = float(edge_data.get("penalty", 0.0) or 0.0)
+    cost = length + penalty
+
+    highways = set(_normalise_tag_values(edge_data.get("highway")))
+    junctions = set(_normalise_tag_values(edge_data.get("junction")))
+
+    # Discourage slip/service connectors unless genuinely needed.
+    if highways & SERVICE_HIGHWAYS:
+        cost += max(30.0, length * 0.35)
+    if highways & LINK_HIGHWAYS:
+        cost += max(18.0, length * 0.18)
+
+    # Mild anti-roundabout-overuse pressure; keeps valid roundabout traversal.
+    if "roundabout" in junctions:
+        cost += 12.0
+
+    # Strong immediate U-turn deterrent.
+    if prev_node is not None and next_node is not None and prev_node == next_node:
+        cost += 5000.0
+
+    # Progress bias: penalize movement away from the current target stage.
+    if dist_u_to_target is not None and dist_v_to_target is not None:
+        delta = dist_v_to_target - dist_u_to_target
+        if delta > 15.0:
+            cost += min(220.0, delta * 0.45)
+
+    return cost
 
 
 def _best_edge_data(edge_bundle):
@@ -20,20 +76,22 @@ def _best_edge_data(edge_bundle):
         return None
     return min(edge_bundle.values(), key=lambda d: d.get("length", float("inf")))
 
-def load_graph(place_name="Greater London, UK"):
+def load_graph(place_name="Greater London, UK", network_type=None):
     """
     Load the street network graph for the given place name.
     """
+    resolved_network_type = network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive")
     CACHE_DIR.mkdir(exist_ok=True)
-    graph_path = CACHE_DIR / GRAPH_FILENAME
+    safe_network_type = str(resolved_network_type).replace("/", "_").replace(" ", "_")
+    graph_path = CACHE_DIR / GRAPH_FILENAME_TEMPLATE.format(network_type=safe_network_type)
 
     if graph_path.exists():
         print(f"Loading graph from cache: {graph_path}")
         return ox.load_graphml(graph_path)
 
     print(f"Downloading graph for {place_name}...")
-    # Use 'drive_service' to include PSV/Taxi access, avoiding private car restrictions
-    G = ox.graph_from_place(place_name, network_type='drive_service')
+    # Default to strict drive graph; optionally allow drive_service via env/arg.
+    G = ox.graph_from_place(place_name, network_type=resolved_network_type)
 
     print("Saving graph to cache...")
     ox.save_graphml(G, graph_path)
@@ -115,10 +173,6 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
 
     c = itertools.count()
 
-    for i, target_set in enumerate(stages):
-        if current_source in target_set:
-            continue
-            
     # Pre-index norm_streets for faster lookup
     # street_to_indices: name -> list of indices where it appears in the sequence
     street_to_indices = {}
@@ -156,15 +210,23 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
             dy = n['y'] - target_lat
             return math.sqrt(dx*dx + dy*dy) * 111000
 
-        # queue: (priority, dist_from_start, tie-breaker, current_node, current_street_idx)
-        queue = [(_h(current_source), 0.0, next(c), current_source, current_street_idx)]
-        visited = {(current_source, current_street_idx): 0.0}
-        parents = {} # (u, idx) -> (prev_u, prev_idx)
-        found_target = None # (node, idx)
+        target_latlon = (target_lat, target_lon)
+
+        def _dist_to_target(node_id):
+            n = G.nodes[node_id]
+            dx = (n['x'] - target_latlon[1]) * 0.6
+            dy = n['y'] - target_latlon[0]
+            return math.sqrt(dx * dx + dy * dy) * 111000
+
+        # queue: (priority, dist_from_start, tie-breaker, current_node, current_street_idx, prev_node)
+        queue = [(_h(current_source), 0.0, next(c), current_source, current_street_idx, None)]
+        visited = {(current_source, current_street_idx, None): 0.0}
+        parents = {} # (u, idx, prev_u) -> (prev_u, prev_idx, prev_prev_u)
+        found_target = None # (node, idx, prev_node)
         
         states_explored = 0
         while queue:
-            priority, dist, _, u, s_idx = heappop(queue)
+            priority, dist, _, u, s_idx, prev_u = heappop(queue)
             states_explored += 1
 
             if states_explored > 500000:
@@ -172,17 +234,20 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
                 break
 
             if u in target_set:
-                found_target = (u, s_idx)
+                found_target = (u, s_idx, prev_u)
                 break
             
             # Since we update visited on push, we only continue if we found a better 
             # path to this state *since* it was pushed.
-            if visited.get((u, s_idx), float('inf')) < dist:
+            if visited.get((u, s_idx, prev_u), float('inf')) < dist:
                 continue
+
+            dist_u_to_target = _dist_to_target(u)
             
             for v, edges in G[u].items():
                 for k, edge_data in edges.items():
-                    length = edge_data.get('length', 1.0)
+                    length = float(edge_data.get('length', 1.0) or 1.0)
+                    dist_v_to_target = _dist_to_target(v)
                     
                     # Get or compute normalized names
                     eid = (u, v, k)
@@ -200,12 +265,19 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
                         edge_norm_cache[eid] = edge_norms
                     
                     # Option 1: Normal routing cost, stay at current index
-                    new_dist_opt1 = dist + length
-                    if visited.get((v, s_idx), float('inf')) > new_dist_opt1:
-                        visited[(v, s_idx)] = new_dist_opt1
+                    step_cost = _edge_traversal_cost(
+                        edge_data,
+                        prev_node=prev_u,
+                        next_node=v,
+                        dist_u_to_target=dist_u_to_target,
+                        dist_v_to_target=dist_v_to_target,
+                    )
+                    new_dist_opt1 = dist + step_cost
+                    if visited.get((v, s_idx, u), float('inf')) > new_dist_opt1:
+                        visited[(v, s_idx, u)] = new_dist_opt1
                         priority = new_dist_opt1 + _h(v)
-                        heappush(queue, (priority, new_dist_opt1, next(c), v, s_idx))
-                        parents[(v, s_idx)] = (u, s_idx)
+                        heappush(queue, (priority, new_dist_opt1, next(c), v, s_idx, u))
+                        parents[(v, s_idx, u)] = (u, s_idx, prev_u)
                         
                     # Option 2: Attempt to find a sequence discount match
                     if norm_streets and s_idx < len(norm_streets):
@@ -226,16 +298,23 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
                                             break
                                             
                         if found_j is not None:
-                            penalty = edge_data.get('penalty', 0.0)
-                            base_length = length - penalty
-                            discounted_cost = (base_length * 0.1) + penalty
+                            penalty = float(edge_data.get('penalty', 0.0) or 0.0)
+                            base_length = max(0.0, length - penalty)
+                            structural_penalty = _edge_traversal_cost(
+                                edge_data,
+                                prev_node=prev_u,
+                                next_node=v,
+                                dist_u_to_target=dist_u_to_target,
+                                dist_v_to_target=dist_v_to_target,
+                            ) - length
+                            discounted_cost = (base_length * 0.1) + penalty + structural_penalty
                             new_dist_opt2 = dist + discounted_cost
                             
-                            if visited.get((v, found_j), float('inf')) > new_dist_opt2:
-                                visited[(v, found_j)] = new_dist_opt2
+                            if visited.get((v, found_j, u), float('inf')) > new_dist_opt2:
+                                visited[(v, found_j, u)] = new_dist_opt2
                                 priority = new_dist_opt2 + _h(v)
-                                heappush(queue, (priority, new_dist_opt2, next(c), v, found_j))
-                                parents[(v, found_j)] = (u, s_idx)
+                                heappush(queue, (priority, new_dist_opt2, next(c), v, found_j, u))
+                                parents[(v, found_j, u)] = (u, s_idx, prev_u)
                                 
         if found_target:
             # Reconstruct path from parents
@@ -264,13 +343,13 @@ def _reroute_avoiding_violations(G, route_nodes, origin_node, dest_node,
     add a massive penalty weight to the (via → to) edge so the router avoids
     it on the next pass.  Repeats up to *max_attempts* times.
 
-    Uses a temporary 'penalty' edge attribute so the original 'length'
-    is preserved for calculations, but the Dijkstra sees the penalty.
+    Uses temporary 'penalty' edge attributes consumed by the traversal
+    cost model; underlying geometric edge lengths are never mutated.
     """
     PENALTY = 10_000_000  # 10,000 km — absolute deterrent
     penalised_edges = set()
     best = list(route_nodes)
-    max_attempts = 10 # Increase attempts to clear multiple violations
+    max_attempts = max(max_attempts, 10)  # clear multi-violation corridors reliably
 
     for attempt in range(max_attempts):
         # Find violations
@@ -293,7 +372,6 @@ def _reroute_avoiding_violations(G, route_nodes, origin_node, dest_node,
             if data:
                 for k in data:
                     G[via][to][k]['penalty'] = PENALTY
-                    G[via][to][k]['length'] += PENALTY
 
         # Re-route
         best = _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermediate_streets)
@@ -304,7 +382,6 @@ def _reroute_avoiding_violations(G, route_nodes, origin_node, dest_node,
         if data:
             for k in data:
                 if 'penalty' in G[via][to][k]:
-                    G[via][to][k]['length'] -= G[via][to][k]['penalty']
                     del G[via][to][k]['penalty']
 
     return best

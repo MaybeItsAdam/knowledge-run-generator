@@ -7,6 +7,7 @@ A Python engine for creating Knowledge of London "Runs" — validated, shortest-
 - **Sequential Dijkstra**: Core logic that prevents "tractor beam" backtracks by requiring forward motion through sequence waypoints to unlock discounts.
 - **Roundabout Aggregation**: Automatically identifies topological roundabout rings and treats them as single waypoint sets.
 - **Automatic Legality**: Validates routes against turn restrictions and provides deterministic "Calls" (navigation instructions).
+- **Cab-Mode Cost Model**: Penalizes service/slip-link detours, immediate U-turns, and backward stage progress to reduce divided-carriageway loop artifacts.
 
 ## CLI
 
@@ -27,13 +28,23 @@ krg web
 Open <http://127.0.0.1:7481>.
 
 The homepage is map-first and supports two run sources:
-- **Blue Book runs** loaded from `constants/runPoints.json` (or a custom file).
-- **User generated runs** created from origin/destination input and persisted to `.context/user_runs.json`.
+- **Blue Book runs** loaded from `constants/runPoints.json` (or a custom file) under a root folder named `blue book runs`.
+- **User generated runs** created from origin/destination input, saved either at root or in user-created folders, and persisted to a user-level data file:
+  - macOS default: `~/Library/Application Support/knowledge-run-generator/user_runs.json`
+  - Linux/other default: `~/.local/share/knowledge-run-generator/user_runs.json`
+
+Web UI behavior:
+- Sidebar is file-hierarchy-first.
+- Top bar shows selected run name.
+- Start/end editor is directly below the run name.
+- Selecting a run from the hierarchy populates start/end fields.
+- Status/storage/details are shown in the map settings pane.
 
 Flags:
 - `--host TEXT`: Host interface to bind (default: `127.0.0.1`).
 - `--port INTEGER`: Port to bind (default: `7481`).
 - `--blue-book-file TEXT`: Path to Blue Book `runPoints.json`.
+- `--user-runs-file TEXT`: Path to user run/folder storage JSON.
 - `--debug`: Enable Flask debug mode.
 
 Examples:
@@ -48,6 +59,10 @@ Environment variable overrides for both `krg web` and `krg-web`:
 - `KRG_WEB_HOST`
 - `KRG_WEB_PORT`
 - `KRG_BLUE_BOOK_FILE`
+- `KRG_USER_RUNS_FILE`
+
+Routing graph profile override:
+- `KRG_GRAPH_NETWORK_TYPE` (`drive` default, or `drive_service`)
 
 ### `krg run`
 
@@ -122,8 +137,16 @@ Blue Book endpoints used by the web UI:
 
 ```bash
 curl http://127.0.0.1:7481/api/bluebook/runs
+curl http://127.0.0.1:7481/api/bluebook/runs/all
 curl "http://127.0.0.1:7481/api/bluebook/runs/1?direction=forward"
 curl http://127.0.0.1:7481/api/user-runs
+curl -X PUT http://127.0.0.1:7481/api/user-runs/1 \
+  -H "Content-Type: application/json" \
+  -d '{"origin":"Manor House Station","destination":"Gibson Square"}'
+curl -X POST http://127.0.0.1:7481/api/folders \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Evening Runs"}'
+curl "http://127.0.0.1:7481/api/locations/search?q=waterloo&limit=6"
 ```
 
 ---
@@ -149,6 +172,7 @@ python -m knowledge_run_generator.blue_book_demo.run_pipeline [OPTIONS]
 - `--format`, `-f {json,geojson}`: Output format (default: `json`).
 - `--limit N`: Only process the first N runs.
 - `--geojson`: Secondary export to `constants/routes.geojson`.
+- `--network-type {drive,drive_service}`: Graph profile override (default uses `KRG_GRAPH_NETWORK_TYPE` or `drive`).
 
 To generate Blue Book data directly for the web app:
 

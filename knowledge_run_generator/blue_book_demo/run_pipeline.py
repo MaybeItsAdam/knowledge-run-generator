@@ -376,7 +376,7 @@ def _remove_backtracks(G, waypoint_nodes, start_coords, end_coords):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def process_runs(output_file, limit=None, export_geojson=False):
+def process_runs(output_file, limit=None, export_geojson=False, network_type="drive"):
     runs_data = []
     processed_ids = set()
     qa_results = {}
@@ -405,7 +405,7 @@ def process_runs(output_file, limit=None, export_geojson=False):
 
     # Load graph
     print("Loading graph...")
-    G = load_graph()
+    G = load_graph(network_type=network_type)
 
     # Street index
     cache_dir = Path("/tmp/app_cache")
@@ -713,6 +713,11 @@ if __name__ == "__main__":
         "--geojson", action="store_true",
         help="Also export a secondary GeoJSON FeatureCollection to constants/routes.geojson (legacy flag).",
     )
+    parser.add_argument(
+        "--network-type",
+        choices=["drive", "drive_service"],
+        help="OSM graph profile. Defaults to env KRG_GRAPH_NETWORK_TYPE or 'drive'.",
+    )
     args = parser.parse_args()
 
     # Resolve output file
@@ -728,4 +733,13 @@ if __name__ == "__main__":
     # Secondary GeoJSON export if requested via legacy flag or if format is geojson
     export_geojson = args.geojson or args.format == "geojson"
 
-    process_runs(output_file, limit=args.limit, export_geojson=export_geojson)
+    network_type = os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive")
+    if getattr(args, "network_type", None):
+        network_type = args.network_type
+
+    process_runs(
+        output_file,
+        limit=args.limit,
+        export_geojson=export_geojson,
+        network_type=network_type,
+    )
