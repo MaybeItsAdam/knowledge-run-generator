@@ -156,14 +156,38 @@ def _merge_waypoints_in_order(G, origin_node, dest_node, existing, new):
     dy = d["y"] - o["y"]
     line_len_sq = dx * dx + dy * dy
 
-    def proj(nid):
+    def _repr_node_id(wp):
+        if isinstance(wp, (set, list, tuple)):
+            return next(iter(wp)) if wp else origin_node
+        return wp
+
+    def proj(wp):
         if line_len_sq == 0:
+            return 0
+        nid = _repr_node_id(wp)
+        if nid not in G.nodes:
             return 0
         n = G.nodes[nid]
         px, py = n["x"] - o["x"], n["y"] - o["y"]
         return (px * dx + py * dy) / line_len_sq
 
-    combined = list(dict.fromkeys(existing + new))  # dedupe, preserve order
+    # Dedupe while supporting unhashable waypoint groups (e.g. roundabout node sets).
+    combined = []
+    seen = set()
+    for wp in (existing + new):
+        if isinstance(wp, set):
+            key = ("set", tuple(sorted(wp)))
+        elif isinstance(wp, list):
+            key = ("list", tuple(wp))
+        elif isinstance(wp, tuple):
+            key = ("tuple", wp)
+        else:
+            key = ("node", wp)
+        if key in seen:
+            continue
+        seen.add(key)
+        combined.append(wp)
+
     combined.sort(key=proj)
     return combined
 
@@ -181,7 +205,7 @@ def correct_and_validate(G, origin_node, dest_node, initial_waypoints,
     Parameters
     ----------
     route_fn : callable(G, origin_node, dest_node, waypoint_nodes) → (route_nodes, metadata)
-    validate_fn : callable(G, route_nodes, origin_node, dest_node, prohibited_turns, expected_streets, config, waypoint_nodes, exempted_turns) → ValidationResult
+    validate_fn : callable(G, route_nodes, origin_node, dest_node, prohibited_turns, expected_streets, config, waypoint_nodes) → ValidationResult
     config : optional per-run overrides dict
     exempted_turns : optional set of (from, via, to) nodes to excuse
     (route_nodes, validation_result, correction_log)
@@ -202,12 +226,11 @@ def correct_and_validate(G, origin_node, dest_node, initial_waypoints,
 
         result = validate_fn(
             G, route_nodes, origin_node, dest_node,
-            prohibited_turns, expected_streets, config, waypoints,
-            exempted_turns=exempted_turns
+            prohibited_turns, expected_streets, config, waypoints
         )
 
         # Track best by distance ratio or just fallback to the first attempt
-        score = result.directness_metrics.get("ratio", float("inf"))
+        score = result.directness_metrics.get("ratio", metadata.get("total_distance", float("inf")))
         if score < best_score or best_route is None:
             best_score = score
             best_route = route_nodes

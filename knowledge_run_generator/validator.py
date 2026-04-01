@@ -38,6 +38,15 @@ class ValidationResult:
     detour_violations: list = field(default_factory=list)
 
 
+def _best_edge_data(edge_bundle):
+    """
+    Return the shortest parallel edge data dict from a MultiDiGraph edge bundle.
+    """
+    if not edge_bundle:
+        return None
+    return min(edge_bundle.values(), key=lambda d: d.get("length", float("inf")))
+
+
 # ---------------------------------------------------------------------------
 # Turn Restrictions
 # ---------------------------------------------------------------------------
@@ -305,8 +314,9 @@ def check_directness(G, route_nodes, origin_node, dest_node,
     route_dist = 0.0
     for i in range(len(route_nodes) - 1):
         edge = G.get_edge_data(route_nodes[i], route_nodes[i + 1])
-        if edge:
-            route_dist += edge[0].get('length', 0)
+        best = _best_edge_data(edge)
+        if best:
+            route_dist += best.get('length', 0)
 
     ratio = route_dist / straight_dist if straight_dist > 0 else float('inf')
 
@@ -379,7 +389,7 @@ def _extract_route_streets(G, route_nodes):
         edge = G.get_edge_data(route_nodes[i], route_nodes[i + 1])
         if not edge:
             continue
-        name = edge[0].get("name", "")
+        name = _best_edge_data(edge).get("name", "")
         if isinstance(name, list):
             name = name[0]
         norm = _normalise_street(name)

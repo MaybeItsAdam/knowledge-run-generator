@@ -469,7 +469,7 @@ def process_runs(output_file, limit=None, export_geojson=False):
 
         # Per-run config from patches
         run_patch = patches.get(str(run_id), {})
-        run_config = {"skip_directness_check": True} # Disabled globally as the semantic router naturally handles this
+        run_config = {"skip_directness_check": False}
         
         if "max_deviation_ratio" in run_patch:
             run_config["max_deviation_ratio"] = run_patch["max_deviation_ratio"]
