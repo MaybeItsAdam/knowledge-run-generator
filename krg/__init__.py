@@ -19,6 +19,7 @@ from knowledge_run_generator import (
     Session,
     build_alias_index,
     cli,
+    fetch_osm_pois,
     generate_run,
     normalise_street,
     preflight_run,
@@ -35,5 +36,6 @@ __all__ = [
     "preflight_run",
     "build_alias_index",
     "normalise_street",
+    "fetch_osm_pois",
     "cli",
 ]

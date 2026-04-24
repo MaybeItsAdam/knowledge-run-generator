@@ -257,6 +257,35 @@ def qa(report, top):
 
 
 # ---------------------------------------------------------------------------
+# osm-pois  (Quick Win 8 — harvest gazetteer seed data from OSM)
+# ---------------------------------------------------------------------------
+
+@cli.command("osm-pois")
+@click.option("--cache", type=click.Path(dir_okay=False),
+              default="/tmp/app_cache/osm_pois.json",
+              help="Cache path for the harvested POI dict.")
+@click.option("--force", is_flag=True,
+              help="Ignore the cache and re-query Overpass.")
+@click.option("--bbox", nargs=4, type=float, default=None,
+              help="south west north east (defaults to Greater London).")
+def osm_pois(cache, force, bbox):
+    """Fetch named POIs from OpenStreetMap into a gazetteer-ready JSON file."""
+    from knowledge_run_generator.osm_pois import (
+        LONDON_BBOX, fetch_pois, kind_counts,
+    )
+
+    target_bbox = tuple(bbox) if bbox else LONDON_BBOX
+    click.echo(
+        f"Harvesting OSM POIs (bbox={target_bbox}, force={force}, cache={cache}) ..."
+    )
+    pois = fetch_pois(bbox=target_bbox, cache_path=Path(cache), force_refresh=force)
+    click.echo(f"Got {len(pois)} named POIs.")
+    for kind, count in sorted(kind_counts(pois).items(),
+                              key=lambda kv: (-kv[1], kv[0])):
+        click.echo(f"  {kind:>10}: {count}")
+
+
+# ---------------------------------------------------------------------------
 # regression  (Phase 4 golden-set)
 # ---------------------------------------------------------------------------
 

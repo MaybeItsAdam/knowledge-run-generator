@@ -127,19 +127,37 @@ class Gazetteer:
       1. ``overrides`` — the manually curated dict (existing
          ``poi_overrides.json``). Matched exactly, then with the postcode
          suffix stripped. This is the authoritative source.
-      2. Future: OSM POIs harvested from the graph (Phase 1 follow-up).
+      2. ``osm_pois`` — harvested from OpenStreetMap via
+         :mod:`knowledge_run_generator.osm_pois`. Fills in the long tail
+         (pubs, stations, theatres, ...) that would otherwise need a
+         manual override each time a new one shows up.
+
+    Overrides always win over OSM POIs so human corrections can't be
+    silently overwritten by a fresh OSM harvest.
 
     Resolution is cached per graph so repeated lookups in a pipeline run are
     near-free.
     """
 
-    def __init__(self, overrides: dict | None = None, alias_index: AliasIndex | None = None):
+    def __init__(
+        self,
+        overrides: dict | None = None,
+        alias_index: AliasIndex | None = None,
+        osm_pois: dict | None = None,
+    ):
         self._overrides_raw: dict[str, Any] = overrides or {}
         self._overrides: dict[str, dict] = {}
         for key, value in self._overrides_raw.items():
             parsed = _parse_override(value)
             if parsed is not None:
                 self._overrides[key.upper()] = parsed
+
+        self._osm_pois: dict[str, dict] = {}
+        for key, value in (osm_pois or {}).items():
+            parsed = _parse_override(value)
+            if parsed is not None:
+                self._osm_pois[key.upper()] = parsed
+
         self.alias_index = alias_index
         self._resolve_cache: dict[tuple[int, str], GazetteerEntry | None] = {}
 
@@ -148,16 +166,32 @@ class Gazetteer:
     # ------------------------------------------------------------------
 
     def lookup_coords(self, address: str) -> dict | None:
-        """Return the raw override dict for *address* if one exists."""
+        """Return the raw coord dict for *address* if one exists.
+
+        Overrides win over OSM POIs. The postcode suffix is stripped
+        on the fallback in both tables.
+        """
         if not address:
             return None
         upper = address.upper()
+
         if upper in self._overrides:
-            return dict(self._overrides[upper])
+            return self._tag_source(dict(self._overrides[upper]), "override")
         no_pc = _POSTCODE_SUFFIX_RE.sub("", upper).strip()
         if no_pc != upper and no_pc in self._overrides:
-            return dict(self._overrides[no_pc])
+            return self._tag_source(dict(self._overrides[no_pc]), "override")
+
+        if upper in self._osm_pois:
+            return self._tag_source(dict(self._osm_pois[upper]), "osm")
+        if no_pc != upper and no_pc in self._osm_pois:
+            return self._tag_source(dict(self._osm_pois[no_pc]), "osm")
+
         return None
+
+    @staticmethod
+    def _tag_source(record: dict, source: str) -> dict:
+        record["_source"] = source
+        return record
 
     def resolve(self, address: str, G) -> GazetteerEntry | None:
         """Resolve *address* → ``GazetteerEntry`` using semantic snap."""
@@ -198,6 +232,7 @@ class Gazetteer:
             snap_distance_m=snap_m,
             on_street=on_street,
             approach_node=approach_node,
+            source=record.get("_source", "override"),
         )
         self._resolve_cache[cache_key] = entry
         return entry

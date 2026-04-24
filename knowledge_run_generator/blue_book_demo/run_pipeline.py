@@ -439,7 +439,26 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
     alias_index = load_or_build_alias_index(G, cache_dir / "alias_index.pkl")
     print(f"  {len(alias_index.canonical_to_nodes)} canonical streets, "
           f"{len(alias_index.alias_to_canonical)} aliases.")
-    gazetteer = Gazetteer(overrides=poi_overrides, alias_index=alias_index)
+
+    # Optional OSM POI harvest (Quick Win 8): if the cache exists we fold it
+    # into the gazetteer as a second-chance lookup behind the curated
+    # overrides. Populate it with `krg osm-pois`; we never auto-fetch here.
+    osm_poi_cache = cache_dir / "osm_pois.json"
+    osm_pois = None
+    if osm_poi_cache.exists():
+        try:
+            blob = json.loads(osm_poi_cache.read_text())
+            osm_pois = blob.get("pois") or {}
+            print(f"  {len(osm_pois)} OSM POIs from {osm_poi_cache}.")
+        except Exception as exc:
+            print(f"  Warning: could not load {osm_poi_cache}: {exc}")
+            osm_pois = None
+
+    gazetteer = Gazetteer(
+        overrides=poi_overrides,
+        alias_index=alias_index,
+        osm_pois=osm_pois,
+    )
 
     # Run-specific patches from local demo directory.
     # These 'fixes' are injected into the library logic during the run loop.

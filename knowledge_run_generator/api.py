@@ -3,7 +3,8 @@ from .router import load_graph, get_route
 from .caller import generate_call
 from .gazetteer import Gazetteer
 
-def generate_run(origin_addr, dest_addr, G=None, poi_overrides=None, gazetteer=None):
+def generate_run(origin_addr, dest_addr, G=None, poi_overrides=None,
+                 gazetteer=None, osm_pois=None):
     """
     High-level API to generate a Knowledge of London run from plaintext addresses.
 
@@ -16,7 +17,10 @@ def generate_run(origin_addr, dest_addr, G=None, poi_overrides=None, gazetteer=N
             ``{"NAME": {"lat":..., "lon":..., "on_street":..., "approach_from":...}}``
             form. If ``gazetteer`` is not supplied, one is built from this dict.
         gazetteer (Gazetteer, optional): Pre-built gazetteer. Takes precedence
-            over ``poi_overrides``.
+            over ``poi_overrides`` / ``osm_pois``.
+        osm_pois (dict, optional): OSM-harvested POIs keyed by uppercase name.
+            Used as a second-chance lookup after ``poi_overrides``. Typically
+            produced by :func:`knowledge_run_generator.osm_pois.fetch_pois`.
 
     Returns:
         dict: A dictionary containing the route and formatted "Turn-by-turn" steps.
@@ -26,8 +30,8 @@ def generate_run(origin_addr, dest_addr, G=None, poi_overrides=None, gazetteer=N
         G = load_graph()
 
     # 2. Build gazetteer from overrides if none supplied
-    if gazetteer is None and poi_overrides:
-        gazetteer = Gazetteer(overrides=poi_overrides)
+    if gazetteer is None and (poi_overrides or osm_pois):
+        gazetteer = Gazetteer(overrides=poi_overrides, osm_pois=osm_pois)
 
     # 3. Geocode and snap
     start = geocode_and_snap(origin_addr, G, poi_overrides, gazetteer=gazetteer)

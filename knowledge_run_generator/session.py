@@ -98,6 +98,7 @@ class Session:
         poi_overrides: dict | str | Path | None = None,
         cache_dir: str | Path = "/tmp/app_cache",
         build_indexes: bool = True,
+        use_osm_pois: bool = True,
     ):
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -105,6 +106,7 @@ class Session:
         self._alias_index: AliasIndex | None = None
         self._gazetteer: Gazetteer | None = None
         self._poi_overrides = self._load_overrides(poi_overrides)
+        self._use_osm_pois = use_osm_pois
 
         if build_indexes and graph is not None:
             # Build eagerly if caller supplied a graph
@@ -136,9 +138,28 @@ class Session:
                 self.graph, self._cache_dir / "alias_index.pkl"
             )
         if self._gazetteer is None:
+            osm_pois = self._load_osm_pois() if self._use_osm_pois else None
             self._gazetteer = Gazetteer(
-                overrides=self._poi_overrides, alias_index=self._alias_index
+                overrides=self._poi_overrides,
+                alias_index=self._alias_index,
+                osm_pois=osm_pois,
             )
+
+    def _load_osm_pois(self) -> dict | None:
+        """Load the cached OSM POI dict if the user has harvested one.
+
+        We never trigger a fresh Overpass fetch from here — that would turn
+        a cold Session() into a 3-minute network call. Use
+        ``krg osm-pois`` explicitly to refresh.
+        """
+        cache = self._cache_dir / "osm_pois.json"
+        if not cache.exists():
+            return None
+        try:
+            blob = json.loads(cache.read_text())
+            return blob.get("pois") or {}
+        except Exception:
+            return None
 
     @staticmethod
     def _load_overrides(src) -> dict:
