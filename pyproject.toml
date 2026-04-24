@@ -67,4 +67,3 @@ include = ["knowledge_run_generator*", "krg*"]
 
 [tool.setuptools.package-data]
 "knowledge_run_generator.blue_book_demo" = ["*.txt", "*.json"]
-"knowledge_run_generator.comparator" = ["data/*.json"]

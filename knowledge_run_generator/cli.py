@@ -14,7 +14,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
-import webbrowser
 from pathlib import Path
 
 import click
@@ -337,68 +336,6 @@ def regression_diff(baseline, report, strict):
     click.echo(format_diff(result))
     if strict and result.has_regressions:
         raise SystemExit(1)
-
-
-# ---------------------------------------------------------------------------
-# view  (opens the comparator HTML for a run)
-# ---------------------------------------------------------------------------
-
-@cli.command("view")
-@click.argument("run_ids", nargs=-1, type=int)
-@click.option("--no-browser", is_flag=True,
-              help="Write the HTML but don't open a browser.")
-@click.option("--limit", type=int, default=None,
-              help="When no IDs given, cap how many runs of the all-runs default are viewed.")
-def view(run_ids, no_browser, limit):
-    """Open a side-by-side comparison for Blue Book runs.
-
-    If no RUN_IDS are given, defaults to every run in runPoints.json.
-    When viewing more than 20 runs, the browser is auto-suppressed so you
-    don't get flooded with tabs — pass IDs explicitly (or a smaller
-    ``--limit``) if you want tabs to open.
-    """
-    from knowledge_run_generator.comparator.report import create_split_viewer
-
-    runs_path = Path("constants/runPoints.json")
-    if not runs_path.exists():
-        click.echo(f"{runs_path} not found. Run `krg bluebookdemo N` first.", err=True)
-        raise SystemExit(1)
-    all_runs = json.loads(runs_path.read_text())
-
-    maps_path = Path(__file__).parent / "comparator" / "data" / "kol_maps.json"
-    kol_maps = json.loads(maps_path.read_text()) if maps_path.exists() else {}
-
-    if not run_ids:
-        run_ids = tuple(r["id"] for r in all_runs if r.get("id") is not None)
-        if limit:
-            run_ids = run_ids[:limit]
-        if not run_ids:
-            click.echo(f"No runs found in {runs_path}.", err=True)
-            raise SystemExit(1)
-        click.echo(f"No IDs given; viewing all {len(run_ids)} runs from {runs_path}.")
-        if not no_browser and len(run_ids) > 20:
-            click.echo(
-                "  (auto-suppressing browser for bulk view — "
-                "pass --no-browser explicitly to silence, or fewer IDs to open tabs)"
-            )
-            no_browser = True
-
-    for rid in run_ids:
-        run_data = next((r for r in all_runs if r.get("id") == rid), None)
-        if run_data is None:
-            click.echo(f"Run {rid}: not in {runs_path}", err=True)
-            continue
-        gen = {
-            "id": run_data.get("id"),
-            "title": run_data.get("title"),
-            "geometry": run_data.get("route", {}).get("geometry"),
-        }
-        ideal_url = kol_maps.get(str(rid)) or kol_maps.get(rid) or "about:blank"
-        output_html = f"comparison_run_{rid}.html"
-        path = create_split_viewer(gen, ideal_url, output_html)
-        click.echo(f"Run {rid} -> {path}")
-        if not no_browser:
-            webbrowser.open(f"file://{path}")
 
 
 if __name__ == "__main__":

@@ -116,13 +116,8 @@ secrets.json
 constants/
 output/
 *.geojson
-!comparator/data/*.json
 !blue_book_demo/poi_overrides.json
 !blue_book_demo/run_specific_fixes.json
-
-# Comparator HTML reports (emitted into the project root by `krg view`)
-comparison_run_*.html
-comparison_report.html
 
 # Cached graph + derived indexes (kept in /tmp by default, ignored here too
 # in case someone sets cache_dir to the project root).
