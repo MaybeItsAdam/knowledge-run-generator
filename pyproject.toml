@@ -45,6 +45,7 @@ dependencies = [
     "networkx>=3.1",
     "geopandas>=0.14",
     "shapely>=2.0",
+    "folium>=0.16",
     "click>=8.0",
     "requests>=2.28",
     "flask>=3.0",
@@ -57,11 +58,12 @@ dependencies = [
 [project.scripts]
 krg = "knowledge_run_generator.cli:cli"
 krg-web = "knowledge_run_generator.webapp:main"
-knowledge-run = "knowledge_run_generator.cli:legacy_cli"
+knowledge-run = "knowledge_run_generator.cli:cli"
 knowledge-run-web = "knowledge_run_generator.webapp:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["knowledge_run_generator*", "krg*"]
 
 [tool.setuptools.package-data]
 "knowledge_run_generator.blue_book_demo" = ["*.txt", "*.json"]
