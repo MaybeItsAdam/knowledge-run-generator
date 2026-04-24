@@ -97,6 +97,8 @@ for step in run['steps']:
     print(f"- {step['instruction']}")
 ```
 
+On first use, the Greater London graph is downloaded and cached locally; a terminal progress bar is shown during this initial download/build step.
+
 ### Data Injection (POI Overrides)
 To ensure high accuracy for specific points of interest (theaters, restaurants, stations), you can pass a dictionary of coordinate overrides to the geocoder:
 
