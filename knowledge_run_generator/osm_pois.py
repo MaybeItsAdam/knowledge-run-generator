@@ -27,7 +27,18 @@ from typing import Any, Iterable
 LONDON_BBOX = (51.28, -0.51, 51.69, 0.33)
 
 DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+FALLBACK_OVERPASS_URLS: tuple[str, ...] = (
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+)
 DEFAULT_CACHE_PATH = Path("/tmp/app_cache/osm_pois.json")
+
+# Overpass blocks the default python-requests UA; a descriptive one is
+# expected by their usage policy.
+_OVERPASS_HEADERS = {
+    "User-Agent": "knowledge-run-generator/0.1 (https://github.com/MaybeItsAdam/knowledge-run-generator)",
+    "Accept": "application/json",
+}
 
 # Tag groups. Each (osm_key, regex-of-values, kind) triple becomes one
 # Overpass filter. Kind is stored on the entry so callers can reason about
@@ -45,10 +56,22 @@ _TAG_GROUPS: tuple[tuple[str, str, str], ...] = (
 )
 
 
-def _build_query(bbox: tuple[float, float, float, float], timeout_s: int = 180) -> str:
+def _build_query(
+    bbox: tuple[float, float, float, float],
+    groups: Iterable[tuple[str, str, str]] | None = None,
+    timeout_s: int = 180,
+) -> str:
+    """Build an Overpass QL query.
+
+    Restricting to a subset of ``groups`` lets the fetcher chunk a heavy
+    London-wide harvest into per-category requests, which reliably
+    avoids the 406 "query too complex" response that combining them all
+    into one request can trigger.
+    """
     south, west, north, east = bbox
+    active = tuple(groups) if groups is not None else _TAG_GROUPS
     clauses: list[str] = []
-    for key, values, _kind in _TAG_GROUPS:
+    for key, values, _kind in active:
         clauses.append(
             f'  node["{key}"~"{values}"]["name"]({south},{west},{north},{east});'
         )
@@ -56,7 +79,10 @@ def _build_query(bbox: tuple[float, float, float, float], timeout_s: int = 180) 
             f'  way["{key}"~"{values}"]["name"]({south},{west},{north},{east});'
         )
     body = "\n".join(clauses)
-    return f"[out:json][timeout:{timeout_s}];\n(\n{body}\n);\nout center body;"
+    # ``out center tags`` is the smallest output that still gives us
+    # name + coordinates for ways; ``body`` would pull every node of
+    # every way, which is what pushes the response past the server cap.
+    return f"[out:json][timeout:{timeout_s}];\n(\n{body}\n);\nout center tags;"
 
 
 def _kind_for(tags: dict[str, str]) -> str:
@@ -74,17 +100,45 @@ def _extract_name(tags: dict[str, str]) -> str | None:
 
 
 def _fetch_overpass(query: str, url: str, retries: int = 3) -> dict:
+    """Send *query* to Overpass, failing over to mirrors on 406/429/5xx.
+
+    The main overpass-api.de mirror returns 406 Not Acceptable when a
+    query is too heavy, the UA is flagged, or the server is under
+    pressure. We retry with a public fallback mirror before giving up.
+    """
     import requests
+
+    endpoints = [url] + [u for u in FALLBACK_OVERPASS_URLS if u != url]
     last_err: Exception | None = None
-    for attempt in range(retries):
-        try:
-            resp = requests.post(url, data={"data": query}, timeout=240)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as exc:
-            last_err = exc
+    last_body: str | None = None
+
+    for endpoint in endpoints:
+        for attempt in range(retries):
+            try:
+                resp = requests.post(
+                    endpoint,
+                    data={"data": query},
+                    headers=_OVERPASS_HEADERS,
+                    timeout=240,
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+                last_err = RuntimeError(
+                    f"{endpoint} -> HTTP {resp.status_code}"
+                )
+                last_body = resp.text[:400] if resp.text else None
+                # 406/429/5xx are all worth a mirror failover; 400 is a
+                # client bug we shouldn't retry.
+                if resp.status_code == 400:
+                    break
+            except Exception as exc:
+                last_err = exc
             time.sleep(2 ** attempt)
-    raise RuntimeError(f"Overpass fetch failed after {retries} attempts: {last_err}")
+
+    raise RuntimeError(
+        f"Overpass fetch failed across {len(endpoints)} endpoint(s): {last_err}"
+        + (f"\nLast body: {last_body}" if last_body else "")
+    )
 
 
 def _element_latlon(el: dict) -> tuple[float, float] | None:
@@ -132,9 +186,17 @@ def fetch_pois(
     cache_path: Path | str | None = DEFAULT_CACHE_PATH,
     overpass_url: str = DEFAULT_OVERPASS_URL,
     force_refresh: bool = False,
+    progress: bool = True,
 ) -> dict[str, dict]:
     """
     Fetch (or load from cache) a normalised POI dict.
+
+    Runs one Overpass request per tag group. Splitting is deliberate:
+    the combined query for London-wide multi-category POIs is large
+    enough that the main mirror has historically returned 406 ("query
+    too heavy") on a single combined request. One small request per
+    group keeps every individual fetch well under the server cap, and
+    partial success still yields a useful gazetteer.
 
     The cached file is shaped::
 
@@ -158,19 +220,43 @@ def fetch_pois(
         except Exception:
             pass  # fall through to a fresh fetch
 
-    query = _build_query(bbox)
-    payload = _fetch_overpass(query, overpass_url)
-    pois = parse_overpass(payload)
+    all_pois: dict[str, dict] = {}
+    failures: list[str] = []
+    for group in _TAG_GROUPS:
+        key, _values, kind = group
+        if progress:
+            print(f"  [osm] fetching {kind} ({key}) ...", flush=True)
+        try:
+            query = _build_query(bbox, groups=(group,))
+            payload = _fetch_overpass(query, overpass_url)
+            chunk = parse_overpass(payload)
+            # curated-override semantics apply across chunks: first-writer wins.
+            for name, record in chunk.items():
+                all_pois.setdefault(name, record)
+            if progress:
+                print(f"    {len(chunk)} named", flush=True)
+        except Exception as exc:
+            failures.append(f"{kind}: {exc}")
+            if progress:
+                print(f"    FAILED: {exc}", flush=True)
+
+    if not all_pois and failures:
+        # Don't cache an empty result from a total outage.
+        raise RuntimeError(
+            "Overpass fetch failed for every tag group:\n  "
+            + "\n  ".join(failures)
+        )
 
     if cache_path:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(json.dumps({
             "fetched_at": int(time.time()),
             "bbox": list(bbox),
-            "pois": pois,
+            "pois": all_pois,
+            "partial_failures": failures,
         }, indent=2, sort_keys=True))
 
-    return pois
+    return all_pois
 
 
 def merge_with_overrides(overrides: dict, osm_pois: dict) -> dict:
