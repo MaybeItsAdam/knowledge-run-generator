@@ -146,28 +146,29 @@ def get_constrained_route(G, origin_node, dest_node, waypoint_nodes,
     Compute the shortest-distance route from *origin_node* to *dest_node*
     passing through *waypoint_nodes* in order.
 
-    If *prohibited_turns* is provided (a set of ``(from, via, to)`` triples),
-    edges involved in violations found on a first pass are penalised and the
-    route is recalculated.
+    *prohibited_turns* is an optional set of ``(from, via, to)`` triples
+    (from OSM ``no_*`` / ``only_*`` relations). They are enforced as a
+    transition filter inside the Dijkstra expansion itself — never
+    mutating the graph — so illegal turns cannot appear in the output,
+    and the graph is safe to share across threads and crash-resilient.
 
     Returns ``(route_nodes, metadata)`` where metadata contains:
       - total_distance  (metres)
       - streets_traversed  (ordered unique street names)
     """
-    route = _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermediate_streets)
-
-    # If we have turn restrictions, check for violations and re-route with penalties
-    if prohibited_turns and route:
-        route = _reroute_avoiding_violations(
-            G, route, origin_node, dest_node, waypoint_nodes, prohibited_turns, intermediate_streets
-        )
-
+    route = _route_through_waypoints(
+        G, origin_node, dest_node, waypoint_nodes,
+        intermediate_streets=intermediate_streets,
+        prohibited_turns=prohibited_turns,
+    )
     clean = _clean_backtrack(route)
     metadata = _extract_route_metadata(G, clean)
     return clean, metadata
 
 
-def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermediate_streets=None):
+def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes,
+                             intermediate_streets=None,
+                             prohibited_turns=None):
     """Shortest-distance route leg-by-leg through ordered waypoints, with sequential street discounts."""
     from heapq import heappush, heappop
     import itertools
@@ -269,6 +270,14 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
             dist_u_to_target = _dist_to_target(u)
             
             for v, edges in G[u].items():
+                # Turn-restriction filter: reject the transition (prev_u, u, v)
+                # directly — no graph mutation, no edge-penalty bookkeeping,
+                # and no risk of leaking state on exception.
+                if (prohibited_turns
+                        and prev_u is not None
+                        and (prev_u, u, v) in prohibited_turns):
+                    continue
+
                 for k, edge_data in edges.items():
                     length = float(edge_data.get('length', 1.0) or 1.0)
                     dist_v_to_target = _dist_to_target(v)
@@ -379,58 +388,6 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
             print(f"  No path for leg {i}: {current_source} -> {target_set}")
 
     return full_route
-
-
-def _reroute_avoiding_violations(G, route_nodes, origin_node, dest_node,
-                                  waypoint_nodes, prohibited_turns, intermediate_streets=None,
-                                  max_attempts=3):
-    """
-    Check the route for turn restriction violations.  For each violation,
-    add a massive penalty weight to the (via → to) edge so the router avoids
-    it on the next pass.  Repeats up to *max_attempts* times.
-
-    Uses temporary 'penalty' edge attributes consumed by the traversal
-    cost model; underlying geometric edge lengths are never mutated.
-    """
-    PENALTY = 10_000_000  # 10,000 km — absolute deterrent
-    penalised_edges = set()
-    best = list(route_nodes)
-    max_attempts = max(max_attempts, 10)  # clear multi-violation corridors reliably
-
-    for attempt in range(max_attempts):
-        # Find violations
-        violations = []
-        for i in range(len(best) - 2):
-            triple = (best[i], best[i + 1], best[i + 2])
-            if triple in prohibited_turns:
-                violations.append(triple)
-
-        if not violations:
-            break
-
-        # Penalise the (via → to) edge of each violation
-        for _frm, via, to in violations:
-            edge_key = (via, to)
-            if edge_key in penalised_edges:
-                continue  # already penalised
-            penalised_edges.add(edge_key)
-            data = G.get_edge_data(via, to)
-            if data:
-                for k in data:
-                    G[via][to][k]['penalty'] = PENALTY
-
-        # Re-route
-        best = _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermediate_streets)
-
-    # Restore original edge weights
-    for via, to in penalised_edges:
-        data = G.get_edge_data(via, to)
-        if data:
-            for k in data:
-                if 'penalty' in G[via][to][k]:
-                    del G[via][to][k]['penalty']
-
-    return best
 
 
 def _clean_backtrack(route_nodes):
