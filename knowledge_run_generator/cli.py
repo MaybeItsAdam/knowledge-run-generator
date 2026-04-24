@@ -257,6 +257,60 @@ def qa(report, top):
 
 
 # ---------------------------------------------------------------------------
+# regression  (Phase 4 golden-set)
+# ---------------------------------------------------------------------------
+
+@cli.group("regression")
+def regression():
+    """Golden-set snapshot + diff for qa_report.json."""
+
+
+@regression.command("snapshot")
+@click.option("--report", "-r", type=click.Path(exists=True, dir_okay=False),
+              default="constants/qa_report.json",
+              help="Path to qa_report.json to freeze.")
+@click.option("--out", "-o", type=click.Path(dir_okay=False),
+              default="tests/golden/qa_baseline.json",
+              help="Where to write the snapshot.")
+def regression_snapshot(report, out):
+    """Capture the current qa_report.json as the regression baseline."""
+    from knowledge_run_generator.regression import summarise, save_snapshot
+
+    snap = summarise(Path(report))
+    save_snapshot(snap, Path(out))
+    click.echo(
+        f"Snapshot -> {out}  "
+        f"(total={snap.total}, passed={snap.passed}, "
+        f"preflight_fails={snap.preflight_fails}, "
+        f"directness_fails={snap.directness_fails}, "
+        f"legality_fails={snap.legality_fails})"
+    )
+
+
+@regression.command("diff")
+@click.option("--baseline", "-b", type=click.Path(exists=True, dir_okay=False),
+              default="tests/golden/qa_baseline.json",
+              help="Path to the frozen baseline snapshot.")
+@click.option("--report", "-r", type=click.Path(exists=True, dir_okay=False),
+              default="constants/qa_report.json",
+              help="Path to the current qa_report.json.")
+@click.option("--strict/--no-strict", default=False,
+              help="Exit non-zero if any regressions are present.")
+def regression_diff(baseline, report, strict):
+    """Show what changed since the baseline snapshot."""
+    from knowledge_run_generator.regression import (
+        summarise, load_snapshot, diff as diff_fn, format_diff,
+    )
+
+    base = load_snapshot(Path(baseline))
+    curr = summarise(Path(report))
+    result = diff_fn(base, curr)
+    click.echo(format_diff(result))
+    if strict and result.has_regressions:
+        raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
 # view  (opens the comparator HTML for a run)
 # ---------------------------------------------------------------------------
 
