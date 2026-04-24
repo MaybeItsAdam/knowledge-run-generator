@@ -31,6 +31,8 @@ from knowledge_run_generator.validator import (
 )
 from knowledge_run_generator.corrector import correct_and_validate
 from knowledge_run_generator.geojson_export import route_to_geojson_feature, export_all_runs_geojson
+from knowledge_run_generator.aliases import load_or_build_alias_index
+from knowledge_run_generator.gazetteer import Gazetteer, preflight_run
 from knowledge_run_generator import caller
 
 
@@ -430,6 +432,15 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         except Exception as e:
             print(f"Warning: Failed to load POI overrides: {e}")
 
+    # Alias index + gazetteer.  The alias index lets the gazetteer's semantic
+    # snap recognise A-road numbers and old names, and the gazetteer owns
+    # snap logic that avoids motorway/trunk segments.
+    print("Building street alias index...")
+    alias_index = load_or_build_alias_index(G, cache_dir / "alias_index.pkl")
+    print(f"  {len(alias_index.canonical_to_nodes)} canonical streets, "
+          f"{len(alias_index.alias_to_canonical)} aliases.")
+    gazetteer = Gazetteer(overrides=poi_overrides, alias_index=alias_index)
+
     # Run-specific patches from local demo directory.
     # These 'fixes' are injected into the library logic during the run loop.
     patches_file = DEMO_DIR / "run_specific_fixes.json"
@@ -457,22 +468,59 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         print(f"Processing Run {run_id}: {origin} -> {destination}")
 
         # ----- Geocode with snapping -----
-        start = geocode_and_snap(origin, G, poi_overrides)
-        end = geocode_and_snap(destination, G, poi_overrides)
+        start = geocode_and_snap(origin, G, poi_overrides, gazetteer=gazetteer)
+        end = geocode_and_snap(destination, G, poi_overrides, gazetteer=gazetteer)
 
         if not start or not end:
             print(f"  SKIP: Failed to geocode Run {run_id}")
+            qa_results[run_id] = {
+                "passed": False,
+                "preflight_ok": False,
+                "preflight_reasons": ["geocode failed for start or end"],
+            }
             continue
 
         start_lat, start_lon, start_node = start
         end_lat, end_lon, end_node = end
 
-        # Per-run config from patches
+        # ----- Preflight: surface snap/resolve problems *before* we route -----
+        start_entry = gazetteer.resolve(origin, G)
+        end_entry = gazetteer.resolve(destination, G)
+        intermediate_streets_raw = list(intermediary_runs.get(run_id, []))
+        pre = preflight_run(
+            start_entry, end_entry,
+            intermediate_streets_raw, alias_index,
+        )
+        if pre.warnings:
+            for w in pre.warnings:
+                print(f"  [preflight-warn] {w}")
+        if not pre.ok:
+            for r in pre.reasons:
+                print(f"  [preflight-fail] {r}")
+            qa_results[run_id] = {
+                "passed": False,
+                "preflight_ok": False,
+                "preflight_reasons": pre.reasons,
+                "start_snap_m": pre.start_snap_m,
+                "end_snap_m": pre.end_snap_m,
+                "unresolved_streets": pre.unresolved_streets,
+            }
+            # Keep going but flag the route; users can triage from qa_report.json.
+
+        # Per-run config from patches.
+        # Directness is now *measured* (not skipped) so failing routes surface
+        # in the QA report.  Individual runs with unusual legitimate geometry
+        # can still widen the threshold via ``max_deviation_ratio`` in
+        # ``run_specific_fixes.json``.
         run_patch = patches.get(str(run_id), {})
         run_config = {"skip_directness_check": False}
-        
+
         if "max_deviation_ratio" in run_patch:
             run_config["max_deviation_ratio"] = run_patch["max_deviation_ratio"]
+        if "max_lateral_offset_m" in run_patch:
+            run_config["max_lateral_offset_m"] = run_patch["max_lateral_offset_m"]
+        if run_patch.get("skip_directness_check"):
+            run_config["skip_directness_check"] = True
 
         try:
             # ----- Build intermediate waypoints -----
@@ -507,11 +555,34 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
 
             print(f"  {len(waypoint_nodes)} intermediate waypoints")
 
+            # Exempt-turns patch: lets a run explicitly whitelist a (from, via, to)
+            # triple that OSM marks as prohibited but is legal for taxis/PSVs.
+            # Spec in ``run_specific_fixes.json``:
+            #   "exempt_turns": [[[lat,lon], [lat,lon], [lat,lon]], ...]
+            exempted_turns = set()
+            for triple in run_patch.get("exempt_turns", []) or []:
+                try:
+                    f_lat, f_lon = triple[0]
+                    v_lat, v_lon = triple[1]
+                    t_lat, t_lon = triple[2]
+                    import osmnx as ox
+                    f = ox.distance.nearest_nodes(G, f_lon, f_lat)
+                    v = ox.distance.nearest_nodes(G, v_lon, v_lat)
+                    t = ox.distance.nearest_nodes(G, t_lon, t_lat)
+                    exempted_turns.add((f, v, t))
+                except Exception as exc:
+                    print(f"  [Patch] Could not resolve exempt_turns triple: {exc}")
+            if exempted_turns:
+                print(f"  [Patch] {len(exempted_turns)} turns exempted")
+
             def _route_fn(G, o, d, wps):
                 return get_constrained_route(G, o, d, wps, prohibited_turns=prohibited_turns, intermediate_streets=intermediate_streets)
 
-            def _validate_fn(G, nodes, o, d, turns, streets, cfg, wps):
-                return validate_route(G, nodes, o, d, turns, streets, cfg, waypoint_nodes=wps)
+            def _validate_fn(G, nodes, o, d, turns, streets, cfg, wps, exempted_turns=None):
+                return validate_route(
+                    G, nodes, o, d, turns, streets, cfg,
+                    waypoint_nodes=wps, exempted_turns=exempted_turns,
+                )
 
             route_nodes, validation, corrections = correct_and_validate(
                 G, start_node, end_node, waypoint_nodes,
@@ -519,6 +590,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
                 route_fn=_route_fn,
                 validate_fn=_validate_fn,
                 config=run_config,
+                exempted_turns=exempted_turns or None,
             )
 
             if not route_nodes or len(route_nodes) < 2:
@@ -622,16 +694,27 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             runs_data.append(run_obj)
             processed_ids.add(run_id)
 
-            # QA record
+            # QA record — expanded so failures can be triaged without re-running
             qa_results[run_id] = {
                 "passed": validation.passed,
                 "ratio": metrics.get("ratio"),
                 "max_offset_m": metrics.get("max_lateral_offset_m"),
                 "legal": validation.is_legal,
+                "is_direct": validation.is_direct,
                 "street_coverage": validation.coverage_metrics.get("coverage"),
                 "corrections": len(corrections),
                 "fwd_distance_m": fwd_distance,
                 "rev_distance_m": rev_distance,
+                # Preflight signal
+                "preflight_ok": pre.ok,
+                "preflight_warnings": pre.warnings,
+                "preflight_reasons": pre.reasons,
+                "start_snap_m": pre.start_snap_m,
+                "end_snap_m": pre.end_snap_m,
+                "unresolved_streets": pre.unresolved_streets,
+                # Patch applied?
+                "patched": bool(run_patch),
+                "exempted_turn_count": len(exempted_turns) if exempted_turns else 0,
             }
 
             # GeoJSON features (optional)
@@ -676,7 +759,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         geojson_path = output_file.parent / "routes.geojson"
         export_all_runs_geojson(geojson_features, geojson_path)
 
-    # Summary
+    # Summary with categorised failure reasons
     total = len(qa_results)
     passed = sum(1 for v in qa_results.values() if v.get("passed"))
     failed = total - passed
@@ -685,6 +768,19 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
     if failed:
         fail_ids = [k for k, v in qa_results.items() if not v.get("passed")]
         print(f"  Failed runs: {fail_ids[:20]}{'...' if len(fail_ids) > 20 else ''}")
+
+        # Triage buckets
+        preflight_fails = sum(1 for v in qa_results.values() if not v.get("preflight_ok", True))
+        directness_fails = sum(
+            1 for v in qa_results.values()
+            if v.get("preflight_ok", True) and v.get("is_direct") is False
+        )
+        legality_fails = sum(
+            1 for v in qa_results.values()
+            if v.get("preflight_ok", True) and v.get("legal") is False
+        )
+        print(f"  Triage: preflight={preflight_fails}  directness={directness_fails}  "
+              f"legality={legality_fails}")
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,8 @@ from sklearn.neighbors import BallTree
 from pathlib import Path
 import json
 
+from .gazetteer import Gazetteer, semantic_snap
+
 _graph_trees = {}
 def load_overrides(path):
     """Load POI overrides from JSON file."""
@@ -78,24 +80,40 @@ def geocode_intersection(street1, street2):
         return None
 
 
-def geocode_and_snap(address, G, poi_overrides=None):
+def geocode_and_snap(address, G, poi_overrides=None, gazetteer=None):
     """
-    Geocode *address* and snap the result to the nearest graph node.
+    Geocode *address* and snap the result to a graph node.
 
-    Lookup order:
-      1. ``poi_overrides`` dict  (exact match, then without postcode)
-      2. Nominatim geocoder
-      3. Nominatim without postcode suffix
+    Resolution order:
+      1. ``gazetteer`` (if provided) — uses semantic snap that prefers a node
+         on the hinted ``on_street`` and avoids motorway/trunk segments.
+      2. ``poi_overrides`` dict (back-compat)  — exact match, then without
+         postcode.
+      3. Nominatim geocoder (with / without postcode suffix).
 
-    The resulting coordinate is snapped to the nearest node in *G* using
-    ``ox.distance.nearest_nodes``.  A warning is printed if the snap
-    distance exceeds 100 m.
+    Steps 2 and 3 fall through to :func:`semantic_snap` so every path benefits
+    from the "avoid wrong side of dual carriageway" logic, even when the
+    caller hasn't supplied a Gazetteer.
+
+    A warning is printed if the snap distance exceeds 100 m.
 
     Returns ``(lat, lon, node_id)`` or ``None``.
     """
+    # 1. Gazetteer (preferred). Owns its own snap so we return directly.
+    if gazetteer is not None:
+        entry = gazetteer.resolve(address, G)
+        if entry is not None:
+            if entry.snap_distance_m > 100:
+                print(
+                    f"  Warning: '{address}' snapped {entry.snap_distance_m:.0f}m "
+                    f"to graph node {entry.snapped_node}"
+                )
+            n = G.nodes[entry.snapped_node]
+            return (n["y"], n["x"], entry.snapped_node)
+
     coords = None
-    
-    # 1. POI overrides
+
+    # 2. Raw POI overrides (back-compat for callers not using Gazetteer)
     if poi_overrides:
         upper = address.upper()
         if upper in poi_overrides:
@@ -108,11 +126,11 @@ def geocode_and_snap(address, G, poi_overrides=None):
                 c = poi_overrides[no_pc]
                 coords = (c[0], c[1]) if isinstance(c, (list, tuple)) else None
 
-    # 2. Nominatim
+    # 3. Nominatim
     if coords is None:
         coords = geocode_address(address)
 
-    # 3. Nominatim without postcode
+    # 4. Nominatim without postcode
     if coords is None:
         no_postcode = re.sub(r'\s+[A-Z]{1,2}\d{1,2}[A-Z]?\s*$', '', address)
         if no_postcode != address:
@@ -123,13 +141,12 @@ def geocode_and_snap(address, G, poi_overrides=None):
 
     lat, lon = coords
 
-    # Snap to nearest graph node
-    node_id = get_nearest_node_cached(G, lat, lon)
+    # Semantic snap: avoid motorway/trunk segments where possible. This
+    # benefits every code path, not only those using the Gazetteer.
+    node_id, snap_dist = semantic_snap(G, lat, lon)
     snapped = G.nodes[node_id]
     snap_lat, snap_lon = snapped['y'], snapped['x']
 
-    # Warn if snap distance is large
-    snap_dist = _haversine(lat, lon, snap_lat, snap_lon)
     if snap_dist > 100:
         print(f"  Warning: '{address}' snapped {snap_dist:.0f}m to graph node {node_id}")
 

@@ -1,10 +1,13 @@
 import os
 import math
+import sys
 import geopandas as gpd
 import networkx as nx
 import osmnx as ox
 from pathlib import Path
 from shapely.geometry import Point, LineString
+
+from .aliases import normalise as _normalise_street_name
 
 CACHE_DIR = Path("/tmp/app_cache")
 GRAPH_FILENAME_TEMPLATE = "london_{network_type}_v3.graphml"
@@ -45,21 +48,17 @@ def _edge_traversal_cost(edge_data, prev_node=None, next_node=None,
     highways = set(_normalise_tag_values(edge_data.get("highway")))
     junctions = set(_normalise_tag_values(edge_data.get("junction")))
 
-    # Discourage slip/service connectors unless genuinely needed.
     if highways & SERVICE_HIGHWAYS:
         cost += max(30.0, length * 0.35)
     if highways & LINK_HIGHWAYS:
         cost += max(18.0, length * 0.18)
 
-    # Mild anti-roundabout-overuse pressure; keeps valid roundabout traversal.
     if "roundabout" in junctions:
         cost += 12.0
 
-    # Strong immediate U-turn deterrent.
     if prev_node is not None and next_node is not None and prev_node == next_node:
         cost += 5000.0
 
-    # Progress bias: penalize movement away from the current target stage.
     if dist_u_to_target is not None and dist_v_to_target is not None:
         delta = dist_v_to_target - dist_u_to_target
         if delta > 15.0:
@@ -69,12 +68,16 @@ def _edge_traversal_cost(edge_data, prev_node=None, next_node=None,
 
 
 def _best_edge_data(edge_bundle):
-    """
-    Return the shortest parallel edge data dict from a MultiDiGraph edge bundle.
-    """
     if not edge_bundle:
         return None
     return min(edge_bundle.values(), key=lambda d: d.get("length", float("inf")))
+
+
+def _print_progress(percent: int, stage: str, width: int = 30) -> None:
+    filled = int(width * max(0, min(100, percent)) / 100)
+    bar = "#" * filled + "-" * (width - filled)
+    print(f"\r[{bar}] {percent:3d}% {stage}", end="", flush=True)
+
 
 def load_graph(place_name="Greater London, UK", network_type=None):
     """
@@ -89,12 +92,27 @@ def load_graph(place_name="Greater London, UK", network_type=None):
         print(f"Loading graph from cache: {graph_path}")
         return ox.load_graphml(graph_path)
 
-    print(f"Downloading graph for {place_name}...")
+    is_tty = sys.stdout.isatty()
+    if is_tty:
+        _print_progress(5, "Starting download")
+        _print_progress(15, f"Requesting map data ({resolved_network_type})")
+    else:
+        print(f"Downloading graph for {place_name} (network_type={resolved_network_type})...")
+
     # Default to strict drive graph; optionally allow drive_service via env/arg.
     G = ox.graph_from_place(place_name, network_type=resolved_network_type)
 
-    print("Saving graph to cache...")
+    if is_tty:
+        _print_progress(85, "Processing graph")
+        _print_progress(95, "Saving graph to cache")
+    else:
+        print("Saving graph to cache...")
+
     ox.save_graphml(G, graph_path)
+    if is_tty:
+        _print_progress(100, "Ready")
+        print()
+
     return G
 
 
@@ -154,10 +172,16 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
     from heapq import heappush, heappop
     import itertools
 
+    # Use the canonical normaliser so the router and the upstream alias index
+    # agree on exactly one form per street — eliminates the need for fuzzy
+    # substring matching below, which produced false discounts (e.g.
+    # "KING STREET" spuriously matching "KINGSWAY").
     norm_streets = []
     if intermediate_streets:
         for s in intermediate_streets:
-            norm_streets.append(str(s).upper().strip().replace("'", "").replace(".", ""))
+            n = _normalise_street_name(s)
+            if n:
+                norm_streets.append(n)
 
     stages = []
     for wp in waypoint_nodes:
@@ -249,7 +273,7 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
                     length = float(edge_data.get('length', 1.0) or 1.0)
                     dist_v_to_target = _dist_to_target(v)
                     
-                    # Get or compute normalized names
+                    # Get or compute normalised names (shared normaliser)
                     eid = (u, v, k)
                     if eid in edge_norm_cache:
                         edge_norms = edge_norm_cache[eid]
@@ -261,7 +285,8 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
                             names = name
                         else:
                             names = []
-                        edge_norms = [str(n).upper().strip().replace("'", "").replace(".", "") for n in names]
+                        edge_norms = [_normalise_street_name(n) for n in names if n]
+                        edge_norms = [n for n in edge_norms if n]
                         edge_norm_cache[eid] = edge_norms
                     
                     # Option 1: Normal routing cost, stay at current index
@@ -279,7 +304,12 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
                         heappush(queue, (priority, new_dist_opt1, next(c), v, s_idx, u))
                         parents[(v, s_idx, u)] = (u, s_idx, prev_u)
                         
-                    # Option 2: Attempt to find a sequence discount match
+                    # Option 2: Attempt to find a sequence discount match.
+                    # Exact match first; then a conservative *token-prefix*
+                    # check (one street's tokens form a prefix of the other's)
+                    # so "KINGS CROSS" still matches "KINGS CROSS ROAD" while
+                    # the old bug — "KING STREET" matching "KINGSWAY" as raw
+                    # substring — can no longer happen.
                     if norm_streets and s_idx < len(norm_streets):
                         found_j = None
                         for en in edge_norms:
@@ -288,11 +318,27 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes, intermed
                                     if idx >= s_idx:
                                         if found_j is None or idx < found_j:
                                             found_j = idx
-                            
+
                             if found_j is None or found_j > s_idx:
+                                en_tokens = en.split()
                                 for j in range(s_idx, min(s_idx + 10, len(norm_streets))):
                                     expected = norm_streets[j]
-                                    if en in expected or expected in en:
+                                    if expected == en:
+                                        if found_j is None or j < found_j:
+                                            found_j = j
+                                            break
+                                        continue
+                                    exp_tokens = expected.split()
+                                    if not en_tokens or not exp_tokens:
+                                        continue
+                                    # Token-prefix match in either direction
+                                    if (len(en_tokens) <= len(exp_tokens)
+                                            and exp_tokens[: len(en_tokens)] == en_tokens):
+                                        if found_j is None or j < found_j:
+                                            found_j = j
+                                            break
+                                    elif (len(exp_tokens) < len(en_tokens)
+                                            and en_tokens[: len(exp_tokens)] == exp_tokens):
                                         if found_j is None or j < found_j:
                                             found_j = j
                                             break
