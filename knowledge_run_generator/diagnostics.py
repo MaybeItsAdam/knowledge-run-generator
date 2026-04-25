@@ -51,6 +51,23 @@ class RingTraversal:
     revisits: int               # nodes visited more than once on this ring run
 
 
+@dataclass
+class LoopArtefact:
+    """A suspected loop: a window of consecutive edges whose endpoints
+    are physically close but whose total length is much greater than
+    the straight-line gap. Detected without depending on OSM junction
+    tags, so it catches "magic roundabouts" (e.g. BFI IMAX) and any
+    other circular street layout the router has lapped.
+    """
+    start_index: int
+    end_index: int
+    arc_length_m: float
+    closure_distance_m: float
+    edges: int
+    names: list[str]    # streets touched by this loop, ordered, deduped
+    revisited_node: int | None  # if the loop closes on a literal revisit
+
+
 def _coerce_str(value: Any) -> str:
     if value is None:
         return ""
@@ -116,6 +133,115 @@ def detect_ring_traversals(facts: list[EdgeFact]) -> list[RingTraversal]:
             revisits=revisits,
         ))
         i = j
+    return out
+
+
+def _haversine_m(G, a: int, b: int) -> float:
+    import math
+    if a not in G.nodes or b not in G.nodes:
+        return float("inf")
+    n1, n2 = G.nodes[a], G.nodes[b]
+    lat1, lon1 = math.radians(n1["y"]), math.radians(n1["x"])
+    lat2, lon2 = math.radians(n2["y"]), math.radians(n2["x"])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 6_371_000 * 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h))
+
+
+def detect_loops(
+    G,
+    nodes: list[int],
+    facts: list[EdgeFact],
+    *,
+    min_loop_edges: int = 4,
+    max_loop_edges: int = 25,
+    closure_radius_m: float = 35.0,
+    min_arc_to_closure_ratio: float = 4.0,
+) -> list[LoopArtefact]:
+    """Find loops in the *node* sequence.
+
+    A loop is a window ``[i, j]`` where:
+      * the window has between ``min_loop_edges`` and ``max_loop_edges`` edges, and
+      * the geometric distance between ``nodes[i]`` and ``nodes[j+1]`` is
+        below ``closure_radius_m`` (treating it as "back where we started"),
+      * the cumulative arc length is at least
+        ``min_arc_to_closure_ratio × closure_distance``.
+
+    The arc/closure ratio guard excludes a legitimate short out-and-back
+    that just happens to come close to itself; a true lap circles for
+    >>4× the closure distance.
+
+    Also flags exact node revisits (same id appearing twice) — those are
+    unambiguous lap signatures regardless of geometry.
+    """
+    out: list[LoopArtefact] = []
+    if len(facts) < min_loop_edges:
+        return out
+
+    # Cumulative distance for fast window-length lookup.
+    cum = [0.0]
+    for f in facts:
+        cum.append(cum[-1] + f.length_m)
+
+    seen_indices: dict[int, int] = {}     # node id -> earliest index
+    consumed_until = -1                   # don't double-report overlapping loops
+
+    for i, n in enumerate(nodes):
+        if n in seen_indices and i > consumed_until:
+            j = seen_indices[n]
+            arc = cum[i] - cum[j]
+            edges = i - j
+            if edges >= 2 and arc >= 50.0:
+                names: list[str] = []
+                for f in facts[j:i]:
+                    if f.name and (not names or names[-1] != f.name):
+                        names.append(f.name)
+                out.append(LoopArtefact(
+                    start_index=j,
+                    end_index=i - 1,
+                    arc_length_m=arc,
+                    closure_distance_m=0.0,
+                    edges=edges,
+                    names=names,
+                    revisited_node=int(n),
+                ))
+                consumed_until = i
+        seen_indices.setdefault(n, i)
+
+    # Sliding-window geometric closure: not all laps revisit an exact node
+    # (graph has parallel edges through the same junction, etc.), so also
+    # look for windows whose endpoints are spatially close.
+    n = len(nodes)
+    for i in range(n):
+        upper = min(n, i + max_loop_edges + 1)
+        for j in range(i + min_loop_edges, upper):
+            if j <= consumed_until:
+                continue
+            arc = cum[j] - cum[i]
+            if arc < 100.0:
+                continue
+            closure = _haversine_m(G, nodes[i], nodes[j])
+            if closure > closure_radius_m:
+                continue
+            if arc < min_arc_to_closure_ratio * max(1.0, closure):
+                continue
+            names: list[str] = []
+            for f in facts[i:j]:
+                if f.name and (not names or names[-1] != f.name):
+                    names.append(f.name)
+            out.append(LoopArtefact(
+                start_index=i,
+                end_index=j - 1,
+                arc_length_m=arc,
+                closure_distance_m=closure,
+                edges=j - i,
+                names=names,
+                revisited_node=None,
+            ))
+            consumed_until = j
+            break  # don't report multiple windows starting at the same i
+
     return out
 
 
@@ -266,6 +392,43 @@ def format_route(
     return "\n".join(lines)
 
 
+def _format_loops(loops: list[LoopArtefact], facts: list[EdgeFact],
+                  context_edges: int = 3) -> str:
+    if not loops:
+        return "  (no loops detected)"
+    lines: list[str] = []
+    for k, loop in enumerate(loops):
+        kind = (
+            f"node revisit (node {loop.revisited_node})"
+            if loop.revisited_node is not None
+            else f"geometric closure ({loop.closure_distance_m:.0f}m)"
+        )
+        lines.append("")
+        lines.append(
+            f"--- Loop #{k + 1}: edges {loop.start_index}-{loop.end_index} "
+            f"({loop.edges} edges, arc={loop.arc_length_m:.0f}m, {kind})"
+        )
+        if loop.names:
+            lines.append("    streets: " + " → ".join(loop.names))
+        lo = max(0, loop.start_index - context_edges)
+        hi = min(len(facts), loop.end_index + 1 + context_edges)
+        for i in range(lo, hi):
+            f = facts[i]
+            marker = ""
+            if i == loop.start_index:
+                marker = "→ loop entry"
+            elif i == loop.end_index:
+                marker = "← loop exit"
+            flag = "R" if f.is_roundabout else " "
+            lines.append(
+                f"  [{i:4d}] {f.length_m:5.1f}m {flag} "
+                f"{(f.name or '')[:30]:30s} hwy={f.highway[:18]:18s} "
+                f"junction={f.junction[:12]:12s}"
+                + (f"  {marker}" if marker else "")
+            )
+    return "\n".join(lines)
+
+
 def diagnose(runs_json: Path, run_id: int, G, direction: str = "forward",
              only_rings: bool = True, context_edges: int = 3) -> str:
     nodes = load_run_nodes(runs_json, run_id, direction=direction)
@@ -277,13 +440,27 @@ def diagnose(runs_json: Path, run_id: int, G, direction: str = "forward",
         ).format(run_id)
     facts = walk_route(G, nodes)
     rings = detect_ring_traversals(facts)
+    loops = detect_loops(G, nodes, facts)
 
     header = [
         f"Run {run_id} ({direction})  —  {len(nodes)} nodes / {len(facts)} edges",
         f"Total distance: {sum(f.length_m for f in facts):.0f} m",
         f"Roundabout edges: {sum(1 for f in facts if f.is_roundabout)} "
         f"across {len(rings)} ring traversal(s)",
+        f"Suspect loops:    {len(loops)}",
     ]
-    body = format_route(facts, rings, G,
-                        only_rings=only_rings, context_edges=context_edges)
-    return "\n".join(header) + "\n" + body
+    sections: list[str] = ["\n".join(header)]
+    if loops:
+        sections.append("Loop artefacts:")
+        sections.append(_format_loops(loops, facts, context_edges=context_edges))
+    if rings:
+        sections.append("Ring traversals (junction=roundabout edges):")
+        sections.append(format_route(facts, rings, G,
+                                     only_rings=True,
+                                     context_edges=context_edges))
+    if not only_rings:
+        sections.append("Full edge dump:")
+        sections.append(format_route(facts, rings, G,
+                                     only_rings=False,
+                                     context_edges=context_edges))
+    return "\n".join(sections)
