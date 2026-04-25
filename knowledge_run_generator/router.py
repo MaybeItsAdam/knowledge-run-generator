@@ -162,6 +162,7 @@ def get_constrained_route(G, origin_node, dest_node, waypoint_nodes,
         prohibited_turns=prohibited_turns,
     )
     clean = _clean_backtrack(route)
+    clean = _collapse_revisits(clean)
     metadata = _extract_route_metadata(G, clean)
     return clean, metadata
 
@@ -404,6 +405,39 @@ def _clean_backtrack(route_nodes):
         else:
             clean.append(curr)
     return clean
+
+
+def _collapse_revisits(route_nodes):
+    """Drop revisit-loops by truncating to the first occurrence of any
+    repeated node.
+
+    Sequence-state Dijkstra (state = ``(node, sequence_idx, prev_node)``)
+    permits a node to be reached multiple times via different predecessor
+    chains. On junctions modelled as small circular street rings (e.g.
+    the BFI IMAX, which is tagged ``junction=circular``, not
+    ``junction=roundabout``, so the pipeline's ring-aggregation never
+    fires), the sequence discount makes a second orbit competitive with
+    the natural exit and the router happily laps.
+
+    The collapse is structurally safe: the second occurrence of node
+    ``X`` was reached from some predecessor and continued to some
+    successor; that successor edge now follows the *first* occurrence
+    of ``X`` in the collapsed list, and the edge ``X → successor``
+    exists in the graph by construction.
+    """
+    if not route_nodes:
+        return []
+    out = [route_nodes[0]]
+    seen = {route_nodes[0]: 0}
+    for n in route_nodes[1:]:
+        if n in seen:
+            keep_until = seen[n]
+            del out[keep_until + 1:]
+            seen = {x: i for i, x in enumerate(out)}
+        else:
+            out.append(n)
+            seen[n] = len(out) - 1
+    return out
 
 
 def _extract_route_metadata(G, route_nodes):

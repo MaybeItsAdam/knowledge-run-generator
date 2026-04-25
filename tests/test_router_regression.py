@@ -2,7 +2,10 @@ import unittest
 
 import networkx as nx
 
-from knowledge_run_generator.router import _route_through_waypoints
+from knowledge_run_generator.router import (
+    _collapse_revisits,
+    _route_through_waypoints,
+)
 
 
 class RouterRegressionTests(unittest.TestCase):
@@ -45,6 +48,38 @@ class RouterRegressionTests(unittest.TestCase):
 
         route = _route_through_waypoints(G, origin_node=1, dest_node=3, waypoint_nodes=[])
         self.assertEqual(route, [1, 3])
+
+
+class CollapseRevisitsTests(unittest.TestCase):
+    def test_no_revisits_unchanged(self):
+        self.assertEqual(_collapse_revisits([1, 2, 3, 4]), [1, 2, 3, 4])
+
+    def test_empty_input(self):
+        self.assertEqual(_collapse_revisits([]), [])
+
+    def test_single_revisit_is_collapsed(self):
+        # A→B→C→D→A→E  → keep first A, drop the lap
+        self.assertEqual(_collapse_revisits([1, 2, 3, 4, 1, 5]), [1, 5])
+
+    def test_imax_lap_pattern(self):
+        # Mirrors run 4: enter, orbit, spur back through start, orbit again,
+        # exit. The final node sequence should keep the first orbit only.
+        path = [
+            10, 11, 12,        # approach
+            20, 21, 22, 23,    # first orbit
+            12,                # back to a previous node (the "lap" closure)
+            30, 31, 32,        # second orbit (should be discarded)
+            12,                # back again to same node
+            40, 41,            # finally onto the bridge
+        ]
+        out = _collapse_revisits(path)
+        self.assertEqual(out, [10, 11, 12, 40, 41])
+
+    def test_inner_revisit_collapses_to_first_occurrence(self):
+        # Node 3 appears twice; keep first occurrence and continue from after
+        # the second.
+        self.assertEqual(_collapse_revisits([1, 2, 3, 4, 5, 3, 6, 7]),
+                         [1, 2, 3, 6, 7])
 
 
 if __name__ == "__main__":
