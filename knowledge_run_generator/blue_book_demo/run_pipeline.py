@@ -698,6 +698,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
                     "duration": fwd_duration,
                     "distance": fwd_distance,
                     "steps": forward_steps,
+                    # Node sequence — used by `krg diagnose` to walk the route
+                    # edge-by-edge against the live graph. Tiny size impact
+                    # (one int list per run), and the webapp ignores it.
+                    "nodes": [int(n) for n in route_nodes],
                 },
                 "routeReverse": {
                     "geometry": {
@@ -707,6 +711,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
                     "duration": rev_duration,
                     "distance": rev_distance,
                     "steps": reverse_steps,
+                    "nodes": [int(n) for n in rev_route_nodes] if rev_route_nodes else [],
                 },
             }
 

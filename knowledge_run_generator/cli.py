@@ -256,6 +256,43 @@ def qa(report, top):
 
 
 # ---------------------------------------------------------------------------
+# diagnose  (per-run edge-by-edge dump for routing artefact triage)
+# ---------------------------------------------------------------------------
+
+@cli.command("diagnose")
+@click.argument("run_id", type=int)
+@click.option("--runs", "-r", type=click.Path(exists=True, dir_okay=False),
+              default="constants/runPoints.json",
+              help="Path to runPoints.json from the pipeline.")
+@click.option("--direction", type=click.Choice(["forward", "reverse"]),
+              default="forward",
+              help="Which direction's route to inspect.")
+@click.option("--full/--rings-only", default=False,
+              help="Print every edge (default: only ring traversals + context).")
+@click.option("--context", type=int, default=3,
+              help="Edges of surrounding context to print around each ring.")
+def diagnose(run_id, runs, direction, full, context):
+    """Walk a run's node sequence edge-by-edge and report ring traversals.
+
+    Reads the node sequence written by the pipeline and looks each edge up
+    in the live graph. Lap artefacts (>50% of a roundabout's perimeter
+    traversed) are flagged with ``<<< LAP`` in the output, which is the
+    quick triage signal for things like Run 4's BFI IMAX roundabout bug.
+    """
+    import krg
+    from knowledge_run_generator.diagnostics import diagnose as run_diagnose
+
+    session = krg.Session()
+    report = run_diagnose(
+        Path(runs), run_id, session.graph,
+        direction=direction,
+        only_rings=not full,
+        context_edges=context,
+    )
+    click.echo(report)
+
+
+# ---------------------------------------------------------------------------
 # osm-pois  (Quick Win 8 — harvest gazetteer seed data from OSM)
 # ---------------------------------------------------------------------------
 
