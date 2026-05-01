@@ -78,13 +78,13 @@ _PAGE_TEMPLATE = """
       --bg-2: #f6f1e6;
       --panel: #fffcf5;
       --line: #1f2937;
-      --line-soft: #1f2937;
+      --line-soft: #94a3b8;
       --text: #0f172a;
-      --muted: #334155;
+      --muted: #475569;
       --accent: #facc15;
       --accent-2: #22c55e;
       --warn: #b91c1c;
-      --shadow: 4px 4px 0 #111827;
+      --shadow: 3px 3px 0 #111827;
       font-family: "Avenir Next", "Segoe UI", sans-serif;
     }
 
@@ -97,10 +97,12 @@ _PAGE_TEMPLATE = """
       background: linear-gradient(145deg, var(--bg-1) 0%, var(--bg-2) 100%);
     }
 
+    button, input, select { font: inherit; color: var(--text); }
+
     .app-shell {
       height: 100dvh;
       display: grid;
-      grid-template-columns: minmax(320px, 380px) 1fr;
+      grid-template-columns: minmax(340px, 400px) 1fr;
       overflow: hidden;
     }
 
@@ -108,10 +110,11 @@ _PAGE_TEMPLATE = """
       overflow: hidden;
       border-right: 3px solid var(--line);
       background: #fffef9;
-      padding: .7rem;
+      padding: .6rem;
       display: flex;
       flex-direction: column;
       gap: .55rem;
+      min-height: 0;
     }
 
     .map-pane {
@@ -127,70 +130,63 @@ _PAGE_TEMPLATE = """
     .panel {
       background: var(--panel);
       border: 2px solid var(--line);
-      border-radius: 0;
       box-shadow: var(--shadow);
-      padding: .72rem;
+      padding: .6rem;
     }
 
-    .panel h1 {
-      margin: 0 0 .2rem;
-      font-size: 1.25rem;
-      letter-spacing: .01em;
-    }
-
-    .panel h2 {
-      margin: 0 0 .45rem;
-      font-size: .95rem;
-      letter-spacing: .01em;
-    }
-
-    .hierarchy-panel {
-      flex: 1;
-      min-height: 0;
+    .mode-banner {
       display: flex;
-      flex-direction: column;
-      gap: .45rem;
-    }
-
-    .meta {
-      color: var(--muted);
-      font-size: .84rem;
-      line-height: 1.35;
-    }
-
-    .run-header-bar {
-      display: grid;
-      grid-template-columns: auto 1fr;
       align-items: center;
-      gap: .42rem;
+      gap: .5rem;
+      padding: .42rem .55rem;
       border: 2px solid var(--line);
+      box-shadow: var(--shadow);
       background: #e8eefc;
-      box-shadow: 3px 3px 0 #111827;
-      padding: .42rem .5rem;
-      min-height: 48px;
     }
 
-    .run-header-label {
+    .mode-banner[data-mode="edit"] {
+      background: #fde68a;
+    }
+
+    .mode-banner[data-mode="fork"] {
+      background: #ddd6fe;
+    }
+
+    .mode-tag {
       display: inline-block;
       border: 2px solid var(--line);
       background: #fff;
-      padding: .14rem .34rem;
-      font-size: .68rem;
+      padding: .12rem .38rem;
+      font-size: .66rem;
       font-weight: 800;
       letter-spacing: .08em;
+      text-transform: uppercase;
+      white-space: nowrap;
     }
 
-    .run-header-name {
-      margin: 0;
-      font-size: 1rem;
-      font-weight: 700;
+    .mode-title {
+      flex: 1;
+      min-width: 0;
+      font-size: .92rem;
+      font-weight: 650;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      color: #0f172a;
     }
 
-    form {
+    .mode-cancel {
+      border: 2px solid var(--line);
+      background: #fff;
+      padding: .22rem .5rem;
+      font-size: .76rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 2px 2px 0 #111827;
+    }
+
+    .mode-cancel.hidden { display: none; }
+
+    .form-section {
       display: grid;
       gap: .42rem;
     }
@@ -198,11 +194,8 @@ _PAGE_TEMPLATE = """
     input, select {
       width: 100%;
       border: 2px solid var(--line);
-      border-radius: 0;
-      padding: .54rem .58rem;
-      font: inherit;
+      padding: .5rem .55rem;
       background: #fff;
-      color: var(--text);
     }
 
     input:focus, select:focus {
@@ -212,40 +205,20 @@ _PAGE_TEMPLATE = """
 
     button {
       border: 2px solid var(--line);
-      border-radius: 0;
-      padding: .48rem .66rem;
-      font: inherit;
+      padding: .46rem .66rem;
       font-weight: 650;
       cursor: pointer;
-      color: #111827;
       background: var(--accent);
-      box-shadow: 3px 3px 0 #111827;
+      box-shadow: var(--shadow);
     }
 
-    button.secondary {
-      background: #d1fae5;
-    }
-
-    button.ghost {
-      background: #edf2fb;
-      color: #1e293b;
-      font-weight: 550;
-    }
-
-    button.tiny {
-      padding: .24rem .42rem;
-      border-radius: 0;
-      font-size: .74rem;
-      font-weight: 600;
-      background: #fff;
-      color: #172554;
-      box-shadow: none;
-    }
+    button.secondary { background: #d1fae5; }
+    button.ghost { background: #edf2fb; font-weight: 550; }
 
     .status-error {
       color: var(--warn);
-      font-size: .83rem;
-      min-height: 1.1rem;
+      font-size: .82rem;
+      min-height: 1rem;
     }
 
     .search-field {
@@ -253,14 +226,17 @@ _PAGE_TEMPLATE = """
     }
 
     .suggestions {
-      margin-top: .24rem;
-      border: 2px solid var(--line-soft);
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 0;
+      right: 0;
+      z-index: 800;
+      border: 2px solid var(--line);
       background: #fff;
-      border-radius: 0;
-      overflow: hidden;
-      max-height: 180px;
+      max-height: 200px;
       overflow-y: auto;
       display: none;
+      box-shadow: var(--shadow);
     }
 
     .suggestions.show { display: block; }
@@ -271,8 +247,7 @@ _PAGE_TEMPLATE = """
       width: 100%;
       text-align: left;
       background: #fff;
-      color: #1e293b;
-      padding: .42rem .5rem;
+      padding: .42rem .55rem;
       font-size: .82rem;
       font-weight: 500;
       cursor: pointer;
@@ -282,72 +257,56 @@ _PAGE_TEMPLATE = """
     .suggestion-item:last-child { border-bottom: 0; }
     .suggestion-item:hover { background: #f3f7ff; }
 
-    .tree {
-      border: 2px solid var(--line-soft);
-      border-radius: 0;
-      background: #ffffff;
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
-      padding: .42rem;
-      font-size: .8rem;
-    }
-
-    .tree-root-row {
-      display: flex;
-      align-items: center;
-      gap: .34rem;
-      color: #0f172a;
-      font-weight: 700;
-      padding: .32rem .4rem;
-      border-bottom: 1px solid #e8eef8;
-      margin-bottom: .18rem;
-    }
-
-    .tree-root-label {
+    .filter-input {
       margin: 0;
     }
 
-    .tree-children {
-      padding-left: .18rem;
+    .tree {
+      border: 2px solid var(--line);
+      background: #ffffff;
+      flex: 1 1 auto;
+      min-height: 120px;
+      overflow-y: auto;
+      padding: .42rem;
+      font-size: .82rem;
+      box-shadow: var(--shadow);
     }
 
-    .tree-folder {
-      margin: .12rem 0;
+    .tree-empty {
+      padding: 1rem .6rem;
+      color: var(--muted);
+      font-size: .85rem;
+      text-align: center;
+      line-height: 1.45;
     }
+
+    .tree-folder { margin: .14rem 0; }
 
     .tree-folder-row {
-      min-height: 28px;
       display: flex;
       align-items: center;
-      gap: .28rem;
-      padding: .22rem .34rem;
-      border-radius: 0;
+      gap: .3rem;
+      padding: .26rem .36rem;
       background: #fef3c7;
       border: 2px solid var(--line);
+      min-height: 30px;
+    }
+
+    .tree-folder[data-builtin="true"] .tree-folder-row {
+      background: #e0e7ff;
     }
 
     .disclosure {
       border: 0;
       background: transparent;
-      color: #334155;
-      width: 16px;
-      min-width: 16px;
+      width: 18px;
+      min-width: 18px;
       text-align: center;
       padding: 0;
-      font-size: .72rem;
-      line-height: 1;
+      font-size: .8rem;
       cursor: pointer;
       box-shadow: none;
-    }
-
-    .folder-icon,
-    .run-icon {
-      width: 14px;
-      min-width: 14px;
-      color: #64748b;
-      text-align: center;
-      font-size: .72rem;
+      color: #334155;
     }
 
     .tree-folder-label {
@@ -363,46 +322,77 @@ _PAGE_TEMPLATE = """
 
     .tree-folder-meta {
       color: var(--muted);
-      font-size: .72rem;
+      font-size: .7rem;
       white-space: nowrap;
     }
 
     .tree-toggle {
       display: inline-flex;
       align-items: center;
-      gap: .18rem;
-      color: #64748b;
+      gap: .22rem;
+      color: #334155;
       font-size: .72rem;
+      font-weight: 600;
       white-space: nowrap;
       user-select: none;
+      cursor: pointer;
     }
 
     .tree-toggle input {
-      width: 13px;
-      height: 13px;
+      width: 14px;
+      height: 14px;
       margin: 0;
       padding: 0;
+      cursor: pointer;
     }
+
+    .row-action {
+      border: 1px solid var(--line);
+      background: #fff;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      font-size: .8rem;
+      line-height: 1;
+      box-shadow: none;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .12s ease;
+    }
+
+    .tree-folder-row:hover .row-action,
+    .tree-run-wrap:hover .row-action,
+    .tree-run-wrap:focus-within .row-action {
+      opacity: 1;
+    }
+
+    .row-action:hover { background: #fee2e2; }
+    .row-action.rename:hover { background: #dbeafe; }
 
     .tree-folder-children {
       margin-top: .12rem;
-      padding-left: 1.2rem;
+      padding-left: 1.15rem;
     }
 
-    .tree-folder-children.hidden {
-      display: none;
+    .tree-folder-children.hidden { display: none; }
+
+    .tree-run-wrap {
+      display: flex;
+      align-items: stretch;
+      gap: .25rem;
+      margin: .14rem 0;
     }
 
     .tree-run {
-      width: 100%;
+      flex: 1;
+      min-width: 0;
       border: 2px solid transparent;
       background: #fff;
       color: #0f172a;
-      border-radius: 0;
-      padding: .28rem .32rem;
+      padding: .3rem .4rem;
       display: flex;
       align-items: flex-start;
-      gap: .28rem;
+      gap: .3rem;
       text-align: left;
       cursor: pointer;
       box-shadow: none;
@@ -413,17 +403,18 @@ _PAGE_TEMPLATE = """
       border-color: var(--line);
     }
 
-    .tree-run-main {
-      min-width: 0;
-      flex: 1;
+    .tree-run.is-selected {
+      background: #fde68a;
+      border-color: var(--line);
     }
+
+    .tree-run-main { min-width: 0; flex: 1; }
 
     .tree-run-label {
       margin: 0;
-      font-size: .79rem;
+      font-size: .8rem;
       line-height: 1.3;
-      font-weight: 560;
-      color: #1e293b;
+      font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -439,60 +430,13 @@ _PAGE_TEMPLATE = """
       text-overflow: ellipsis;
     }
 
-    .empty {
-      padding: .5rem;
-      color: var(--muted);
-      font-size: .8rem;
-    }
-
-    .details {
-      border: 2px solid var(--line-soft);
-      border-radius: 0;
-      background: #f8fbff;
-      padding: .6rem;
-    }
-
-    .details strong {
-      font-size: .9rem;
-    }
-
-    .details ol {
-      margin: .42rem 0 0;
-      padding-left: 1.1rem;
-      max-height: 170px;
-      overflow-y: auto;
-      font-size: .82rem;
-      line-height: 1.38;
-    }
-
-    .settings-pane {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      width: min(430px, calc(100% - 24px));
-      z-index: 650;
-      box-shadow: var(--shadow);
-      pointer-events: auto;
-      display: grid;
-      gap: .45rem;
-    }
-
-    .sidebar-footer {
-      flex: 0 0 auto;
-      display: grid;
-      gap: .42rem;
-    }
-
     .add-button {
       width: 100%;
-      border-radius: 0;
       background: #fde047;
-      box-shadow: 3px 3px 0 #111827;
     }
 
     .add-drawer {
       border: 2px solid var(--line);
-      border-radius: 0;
       background: #ffffff;
       box-shadow: var(--shadow);
       padding: .5rem;
@@ -500,80 +444,175 @@ _PAGE_TEMPLATE = """
       gap: .42rem;
     }
 
-    .add-drawer.hidden {
-      display: none;
+    .add-drawer.hidden { display: none; }
+
+    .details {
+      border: 2px solid var(--line);
+      background: #f8fbff;
+      padding: .55rem;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+      max-height: 38dvh;
+      overflow: hidden;
     }
+
+    .details-header {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+    }
+
+    .details-title {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      font-size: .92rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .details-toggle {
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: .14rem .42rem;
+      font-size: .72rem;
+      box-shadow: none;
+    }
+
+    .details-body {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: .32rem;
+    }
+
+    .details-body.hidden { display: none; }
+
+    .details-meta {
+      color: var(--muted);
+      font-size: .8rem;
+      line-height: 1.35;
+    }
+
+    .details-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .28rem;
+    }
+
+    .stat-chip {
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: .14rem .42rem;
+      font-size: .72rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .step-list {
+      margin: .15rem 0 0;
+      padding-left: 1.05rem;
+      font-size: .8rem;
+      line-height: 1.4;
+    }
+
+    .step-list li { margin: .08rem 0; }
+
+    .empty-hint {
+      color: var(--muted);
+      font-size: .82rem;
+      line-height: 1.45;
+    }
+
+    .map-floating-status {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      z-index: 600;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+      padding: .22rem .5rem;
+      font-size: .72rem;
+      color: var(--muted);
+      pointer-events: none;
+      max-width: calc(100% - 16px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .map-floating-status.hidden { display: none; }
 
     @media (max-width: 980px) {
       .app-shell {
         grid-template-columns: 1fr;
-        grid-template-rows: 50dvh 50dvh;
+        grid-template-rows: minmax(0, 1fr) 50dvh;
       }
+
+      .map-pane { order: -1; }
 
       .sidebar {
-        max-height: 50dvh;
         border-right: 0;
-        border-bottom: 1px solid var(--line);
+        border-top: 3px solid var(--line);
       }
 
-      .settings-pane {
-        width: calc(100% - 16px);
-        top: 8px;
-        right: 8px;
-      }
+      .details { max-height: 30dvh; }
     }
   </style>
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <section class="panel hierarchy-panel">
-        <div class="run-header-bar">
-          <span class="run-header-label">RUN</span>
-          <p id="currentRunName" class="run-header-name">untitled</p>
+      <div id="modeBanner" class="mode-banner" data-mode="new">
+        <span id="modeTag" class="mode-tag">New Run</span>
+        <span id="modeTitle" class="mode-title">Enter a start and end</span>
+        <button id="cancelEditButton" class="mode-cancel hidden" type="button">Cancel</button>
+      </div>
+
+      <form id="userRunForm" class="form-section">
+        <div class="search-field">
+          <input id="originInput" required autocomplete="off" placeholder="Start (e.g. King's Cross)">
+          <div id="originSuggestions" class="suggestions"></div>
         </div>
+        <div class="search-field">
+          <input id="destinationInput" required autocomplete="off" placeholder="End (e.g. Tower Bridge)">
+          <div id="destinationSuggestions" class="suggestions"></div>
+        </div>
+        <select id="folderSelect" aria-label="Save to folder"></select>
+        <button id="saveRunButton" type="submit">Save Run</button>
+      </form>
+      <div id="userRunError" class="status-error"></div>
 
-        <form id="userRunForm" class="quick-run-form">
-          <div class="search-field">
-            <input id="originInput" required autocomplete="off" placeholder="Start point">
-            <div id="originSuggestions" class="suggestions"></div>
-          </div>
-          <div class="search-field">
-            <input id="destinationInput" required autocomplete="off" placeholder="End point">
-            <div id="destinationSuggestions" class="suggestions"></div>
-          </div>
-          <select id="folderSelect"></select>
-          <button id="saveRunButton" type="submit">Save Run</button>
+      <input id="blueBookSearch" class="filter-input" type="search" placeholder="Filter runs">
+      <div id="runTree" class="tree"></div>
+
+      <button id="addButton" class="add-button" type="button">+ New Folder</button>
+      <div id="addDrawer" class="add-drawer hidden">
+        <form id="folderForm" class="form-section">
+          <input id="folderNameInput" required maxlength="80" placeholder="Folder name">
+          <button class="secondary" type="submit">Create Folder</button>
         </form>
-        <div id="userRunError" class="status-error"></div>
+        <div id="folderError" class="status-error"></div>
+      </div>
 
-        <input id="blueBookSearch" type="search" placeholder="Filter file hierarchy">
-        <div id="runTree" class="tree"></div>
-      </section>
-
-      <section class="sidebar-footer">
-        <button id="addButton" class="add-button" type="button">+ Add Folder</button>
-        <div id="addDrawer" class="add-drawer hidden">
-          <form id="folderForm">
-            <input id="folderNameInput" required maxlength="80" placeholder="Folder name">
-            <button class="secondary" type="submit">Create Folder</button>
-          </form>
-          <div id="folderError" class="status-error"></div>
+      <section id="runDetails" class="details">
+        <header class="details-header">
+          <p id="detailsTitle" class="details-title">No run selected</p>
+          <button id="detailsToggle" class="details-toggle" type="button" aria-expanded="true">Hide</button>
+        </header>
+        <div id="detailsBody" class="details-body">
+          <div class="empty-hint">Pick a run from the list to view its route, or save a new one above.</div>
         </div>
       </section>
     </aside>
 
     <section class="map-pane">
       <div id="map"></div>
-      <section id="settingsPane" class="panel settings-pane">
-        <h2>Settings</h2>
-        <div class="meta" id="bluebookStatus">Loading blue book runs...</div>
-        <div class="meta" id="userStorage"></div>
-        <section id="runDetails" class="details">
-          <strong>No run selected.</strong>
-          <div class="meta">Pick a run from the file hierarchy or edit start/end then save.</div>
-        </section>
-      </section>
+      <div id="mapStatus" class="map-floating-status hidden"></div>
     </section>
   </div>
 
@@ -598,6 +637,7 @@ _PAGE_TEMPLATE = """
       blueBookSummaries: [],
       blueBookRunsById: {},
       blueBookAllLoaded: false,
+      blueBookLoadInFlight: null,
       userRuns: [],
       userFolders: [],
       storageSource: "",
@@ -605,6 +645,7 @@ _PAGE_TEMPLATE = """
       searchSuggestions: { origin: [], destination: [] },
       searchSeq: { origin: 0, destination: 0 },
       debounceTimers: { origin: null, destination: null },
+      detailsHidden: false,
     };
 
     function escapeHtml(value) {
@@ -614,6 +655,18 @@ _PAGE_TEMPLATE = """
         .replace(/>/g, "&gt;")
         .replace(/\"/g, "&quot;")
         .replace(/'/g, "&#39;");
+    }
+
+    function setMapStatus(message) {
+      const el = document.getElementById("mapStatus");
+      if (!el) return;
+      if (!message) {
+        el.classList.add("hidden");
+        el.textContent = "";
+        return;
+      }
+      el.textContent = message;
+      el.classList.remove("hidden");
     }
 
     function initMap() {
@@ -687,8 +740,16 @@ _PAGE_TEMPLATE = """
       });
     }
 
-    function setFolderVisibility(folderKey, visible, rerender = true) {
+    async function setFolderVisibility(folderKey, visible, rerender = true) {
       state.visibleFolders[folderKey] = Boolean(visible);
+
+      if (folderKey === BLUE_BOOK_FOLDER_KEY && visible && !state.blueBookAllLoaded) {
+        const loaded = await loadAllBlueBookRuns();
+        if (!loaded) {
+          state.visibleFolders[folderKey] = false;
+        }
+      }
+
       syncFolderLayers();
       if (rerender) {
         renderRunTree();
@@ -697,28 +758,78 @@ _PAGE_TEMPLATE = """
 
     function refreshSaveButtonLabel() {
       const saveButton = document.getElementById("saveRunButton");
-      if (!saveButton) {
-        return;
-      }
+      if (!saveButton) return;
       const isEditingUserRun = Boolean(state.selectedRun && state.selectedRun.source === "user");
       saveButton.textContent = isEditingUserRun ? "Save Changes" : "Save Run";
+    }
+
+    function refreshModeBanner() {
+      const banner = document.getElementById("modeBanner");
+      const tag = document.getElementById("modeTag");
+      const title = document.getElementById("modeTitle");
+      const cancel = document.getElementById("cancelEditButton");
+      if (!banner || !tag || !title || !cancel) return;
+
+      const selected = state.selectedRun;
+
+      if (!selected) {
+        banner.dataset.mode = "new";
+        tag.textContent = "New Run";
+        title.textContent = "Enter a start and end";
+        cancel.classList.add("hidden");
+        return;
+      }
+
+      if (selected.source === "user") {
+        banner.dataset.mode = "edit";
+        tag.textContent = "Editing";
+        title.textContent = selected.title || ("Run " + selected.id);
+        cancel.classList.remove("hidden");
+        return;
+      }
+
+      banner.dataset.mode = "fork";
+      tag.textContent = "Fork From";
+      title.textContent = selected.title || ("Run " + selected.id);
+      cancel.classList.remove("hidden");
+    }
+
+    function clearForm() {
+      const originInput = document.getElementById("originInput");
+      const destinationInput = document.getElementById("destinationInput");
+      const folderSelect = document.getElementById("folderSelect");
+      if (originInput) originInput.value = "";
+      if (destinationInput) destinationInput.value = "";
+      if (folderSelect) folderSelect.value = "";
+      const errorEl = document.getElementById("userRunError");
+      if (errorEl) errorEl.textContent = "";
+      state.searchSuggestions.origin = [];
+      state.searchSuggestions.destination = [];
+      renderSuggestions("origin");
+      renderSuggestions("destination");
+      updateSearchPreviewMarkers();
+    }
+
+    function deselectRun() {
+      state.selectedRun = null;
+      state.focusLayer.clearLayers();
+      clearForm();
+      refreshSaveButtonLabel();
+      refreshModeBanner();
+      renderDetails(null, "");
+      renderRunTree();
     }
 
     function populateRunEditor(runPayload) {
       const originInput = document.getElementById("originInput");
       const destinationInput = document.getElementById("destinationInput");
       const folderSelect = document.getElementById("folderSelect");
-
-      if (!originInput || !destinationInput) {
-        return;
-      }
+      if (!originInput || !destinationInput) return;
 
       originInput.value = (((runPayload || {}).start || {}).name) || "";
       destinationInput.value = (((runPayload || {}).end || {}).name) || "";
 
-      if (!folderSelect) {
-        return;
-      }
+      if (!folderSelect) return;
 
       if ((runPayload || {}).source === "user") {
         folderSelect.value = (runPayload || {}).folder_id || "";
@@ -731,6 +842,7 @@ _PAGE_TEMPLATE = """
       if (!runPayload) {
         state.selectedRun = null;
         refreshSaveButtonLabel();
+        refreshModeBanner();
         return;
       }
 
@@ -739,18 +851,16 @@ _PAGE_TEMPLATE = """
         id: runPayload.id,
         source,
         folder_id: runPayload.folder_id || null,
+        title: runPayload.title || null,
       };
       populateRunEditor(runPayload);
       refreshSaveButtonLabel();
+      refreshModeBanner();
     }
 
     function colorForFolder(folderKey) {
-      if (folderKey === BLUE_BOOK_FOLDER_KEY) {
-        return BLUE_BOOK_COLOR;
-      }
-      if (folderKey === ROOT_USER_FOLDER_KEY) {
-        return "#0f766e";
-      }
+      if (folderKey === BLUE_BOOK_FOLDER_KEY) return BLUE_BOOK_COLOR;
+      if (folderKey === ROOT_USER_FOLDER_KEY) return "#0f766e";
 
       const palette = ["#2563eb", "#0f766e", "#dc2626", "#7c3aed", "#c2410c", "#0e7490", "#be123c"];
       const text = String(folderKey || "folder");
@@ -762,53 +872,54 @@ _PAGE_TEMPLATE = """
     }
 
     function renderDetails(runPayload, tagLabel) {
-      const detailsEl = document.getElementById("runDetails");
-      const currentRunNameEl = document.getElementById("currentRunName");
+      const titleEl = document.getElementById("detailsTitle");
+      const bodyEl = document.getElementById("detailsBody");
+      if (!titleEl || !bodyEl) return;
+
       if (!runPayload) {
-        detailsEl.innerHTML = "<strong>No run selected.</strong><div class='meta'>Select a run from the file hierarchy.</div>";
-        if (currentRunNameEl) {
-          currentRunNameEl.textContent = "untitled";
-        }
+        titleEl.textContent = "No run selected";
+        bodyEl.innerHTML = '<div class="empty-hint">Pick a run from the list to view its route, or save a new one above.</div>';
         return;
       }
 
       const route = runPayload.route || {};
       const steps = Array.isArray(route.steps) ? route.steps : [];
-      const distance = Number(route.distance || 0).toFixed(1);
-      const duration = Number(route.duration || 0).toFixed(1);
+      const distance = Number(route.distance || 0);
+      const duration = Number(route.duration || 0);
       const startName = ((runPayload.start || {}).name) || "Unknown";
       const endName = ((runPayload.end || {}).name) || "Unknown";
       const runTitle = String(runPayload.title || "Untitled");
 
-      if (currentRunNameEl) {
-        currentRunNameEl.textContent = runTitle;
-      }
+      titleEl.textContent = runTitle;
 
-      detailsEl.innerHTML = `
-        <strong>${escapeHtml(runTitle)} (${escapeHtml(tagLabel)})</strong>
-        <div class="meta">${escapeHtml(startName)} -> ${escapeHtml(endName)}</div>
-        <div class="meta">Distance ${distance}m | Duration ${duration}s | Steps ${steps.length}</div>
-        <ol>${steps.map((step) => `<li>${escapeHtml(step.instruction || "")}</li>`).join("")}</ol>
-      `;
+      const stepsBlock = steps.length
+        ? '<ol class="step-list">' + steps.map((step) => '<li>' + escapeHtml(step.instruction || "") + '</li>').join("") + '</ol>'
+        : '';
+
+      bodyEl.innerHTML =
+        '<div class="details-meta">' + escapeHtml(tagLabel || "") + '</div>' +
+        '<div class="details-meta">' + escapeHtml(startName) + ' &rarr; ' + escapeHtml(endName) + '</div>' +
+        '<div class="details-stats">' +
+          '<span class="stat-chip">' + distance.toFixed(0) + ' m</span>' +
+          '<span class="stat-chip">' + duration.toFixed(0) + ' s</span>' +
+          '<span class="stat-chip">' + steps.length + ' step' + (steps.length === 1 ? '' : 's') + '</span>' +
+        '</div>' +
+        stepsBlock;
     }
 
     function drawRunLayer(runPayload, targetLayer, color, tagLabel, onFocusClick) {
       const coords = ((((runPayload || {}).route || {}).geometry || {}).coordinates || []);
-      if (!coords.length) {
-        return null;
-      }
+      if (!coords.length) return null;
 
       const latLngs = coords.map((point) => [point[1], point[0]]);
       const polyline = L.polyline(latLngs, {
         color,
         weight: 4,
-        opacity: 0.5,
+        opacity: 0.55,
         lineJoin: "round",
       }).addTo(targetLayer);
 
-      if (onFocusClick) {
-        polyline.on("click", onFocusClick);
-      }
+      if (onFocusClick) polyline.on("click", onFocusClick);
 
       const start = (runPayload || {}).start || {};
       const end = (runPayload || {}).end || {};
@@ -823,10 +934,8 @@ _PAGE_TEMPLATE = """
           fillOpacity: 0.9,
           opacity: 0.9,
         }).addTo(targetLayer);
-        startMarker.bindTooltip(`Start: ${escapeHtml(start.name || "Unknown")}`);
-        if (onFocusClick) {
-          startMarker.on("click", onFocusClick);
-        }
+        startMarker.bindTooltip("Start: " + escapeHtml(start.name || "Unknown"));
+        if (onFocusClick) startMarker.on("click", onFocusClick);
       }
 
       if (endCoords.length === 2) {
@@ -837,19 +946,15 @@ _PAGE_TEMPLATE = """
           fillOpacity: 0.45,
           opacity: 0.95,
         }).addTo(targetLayer);
-        endMarker.bindTooltip(`End: ${escapeHtml(end.name || "Unknown")}`);
-        if (onFocusClick) {
-          endMarker.on("click", onFocusClick);
-        }
+        endMarker.bindTooltip("End: " + escapeHtml(end.name || "Unknown"));
+        if (onFocusClick) endMarker.on("click", onFocusClick);
       }
 
-      return {
-        bounds: polyline.getBounds(),
-        tagLabel,
-      };
+      return { bounds: polyline.getBounds(), tagLabel };
     }
 
-    function focusRun(runPayload, tagLabel, color, fitBounds = true) {
+    function focusRun(runPayload, tagLabel, color, fitBounds) {
+      const shouldFit = fitBounds !== false;
       state.focusLayer.clearLayers();
       const drawn = drawRunLayer(runPayload, state.focusLayer, color, tagLabel, null);
       if (drawn) {
@@ -862,13 +967,14 @@ _PAGE_TEMPLATE = """
           }
         });
 
-        if (fitBounds && drawn.bounds && drawn.bounds.isValid()) {
+        if (shouldFit && drawn.bounds && drawn.bounds.isValid()) {
           state.map.fitBounds(drawn.bounds, { padding: [34, 34] });
         }
       }
 
       renderDetails(runPayload, tagLabel);
       setSelectedRun(runPayload);
+      renderRunTree();
     }
 
     function redrawUserFolderLayers() {
@@ -882,7 +988,7 @@ _PAGE_TEMPLATE = """
         const folderKey = run.folder_id || ROOT_USER_FOLDER_KEY;
         const color = colorForFolder(folderKey);
         const layer = getFolderLayer(folderKey);
-        drawRunLayer(run, layer, color, "User", () => focusRun(run, "User", color, true));
+        drawRunLayer(run, layer, color, "User", () => focusRun(run, folderName(folderKey), color, true));
       });
 
       syncFolderLayers();
@@ -891,10 +997,7 @@ _PAGE_TEMPLATE = """
     function redrawBlueBookLayer() {
       const layer = getFolderLayer(BLUE_BOOK_FOLDER_KEY);
       layer.clearLayers();
-
-      if (!state.blueBookAllLoaded) {
-        return;
-      }
+      if (!state.blueBookAllLoaded) return;
 
       Object.values(state.blueBookRunsById).forEach((run) => {
         drawRunLayer(run, layer, BLUE_BOOK_COLOR, "blue book", () => focusRun(run, "blue book", BLUE_BOOK_COLOR, true));
@@ -911,12 +1014,8 @@ _PAGE_TEMPLATE = """
     }
 
     function folderName(folderKey) {
-      if (folderKey === BLUE_BOOK_FOLDER_KEY) {
-        return "blue book runs";
-      }
-      if (folderKey === ROOT_USER_FOLDER_KEY) {
-        return "user root runs";
-      }
+      if (folderKey === BLUE_BOOK_FOLDER_KEY) return "Blue Book";
+      if (folderKey === ROOT_USER_FOLDER_KEY) return "My Runs";
       const folder = state.userFolders.find((item) => item.id === folderKey);
       return folder ? folder.name : "folder";
     }
@@ -925,11 +1024,11 @@ _PAGE_TEMPLATE = """
       const selectEl = document.getElementById("folderSelect");
       const previous = selectEl.value;
       const options = [
-        `<option value="">Save At Root</option>`,
+        '<option value="">Save to: My Runs (root)</option>',
         ...state.userFolders
           .slice()
           .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
-          .map((folder) => `<option value="${escapeHtml(folder.id)}">Folder: ${escapeHtml(folder.name)}</option>`),
+          .map((folder) => '<option value="' + escapeHtml(folder.id) + '">Save to: ' + escapeHtml(folder.name) + '</option>'),
       ];
       selectEl.innerHTML = options.join("");
       if (["", ...state.userFolders.map((folder) => folder.id)].includes(previous)) {
@@ -937,79 +1036,89 @@ _PAGE_TEMPLATE = """
       }
     }
 
+    function isRunSelected(source, runId) {
+      const sel = state.selectedRun;
+      if (!sel) return false;
+      return sel.source === source && String(sel.id) === String(runId);
+    }
+
     function renderBlueBookRows() {
       const term = state.blueBookSearch.trim().toLowerCase();
       const filtered = state.blueBookSummaries.filter((run) => {
-        if (!term) {
-          return true;
-        }
-        const hay = `${run.id} ${run.title} ${run.start_name} ${run.end_name}`.toLowerCase();
+        if (!term) return true;
+        const hay = (run.id + " " + run.title + " " + run.start_name + " " + run.end_name).toLowerCase();
         return hay.includes(term);
       });
 
       if (!filtered.length) {
-        return "<div class='empty'>No matching blue book runs.</div>";
+        return '<div class="tree-empty">No matching blue book runs.</div>';
       }
 
       return filtered
-        .map(
-          (run) => `
-            <button class="tree-run" type="button" data-action="show-blue" data-run-id="${escapeHtml(run.id)}">
-              <span class="run-icon">-</span>
-              <span class="tree-run-main">
-                <p class="tree-run-label">Run ${escapeHtml(run.id)}: ${escapeHtml(run.title)}</p>
-                <p class="tree-run-sub">${escapeHtml(run.start_name)} -> ${escapeHtml(run.end_name)}</p>
-              </span>
-            </button>
-          `
-        )
+        .map((run) => {
+          const selected = isRunSelected("blue_book", run.id) ? " is-selected" : "";
+          return (
+            '<div class="tree-run-wrap">' +
+              '<button class="tree-run' + selected + '" type="button" data-action="show-blue" data-run-id="' + escapeHtml(run.id) + '">' +
+                '<span class="tree-run-main">' +
+                  '<p class="tree-run-label">' + escapeHtml(run.title || ("Run " + run.id)) + '</p>' +
+                  '<p class="tree-run-sub">' + escapeHtml(run.start_name) + ' &rarr; ' + escapeHtml(run.end_name) + '</p>' +
+                '</span>' +
+              '</button>' +
+            '</div>'
+          );
+        })
         .join("");
     }
 
     function renderUserRows(runs) {
       if (!runs.length) {
-        return "<div class='empty'>No runs in this folder.</div>";
+        return '<div class="tree-empty">No runs in this folder.</div>';
       }
 
       return runs
-        .map(
-          (run) => `
-            <button class="tree-run" type="button" data-action="show-user" data-user-id="${escapeHtml(run.id)}">
-              <span class="run-icon">-</span>
-              <span class="tree-run-main">
-                <p class="tree-run-label">${escapeHtml(run.title || `Run ${run.id}`)}</p>
-                <p class="tree-run-sub">${escapeHtml((run.start || {}).name || "Unknown")} -> ${escapeHtml((run.end || {}).name || "Unknown")}</p>
-              </span>
-            </button>
-          `
-        )
+        .map((run) => {
+          const selected = isRunSelected("user", run.id) ? " is-selected" : "";
+          return (
+            '<div class="tree-run-wrap">' +
+              '<button class="tree-run' + selected + '" type="button" data-action="show-user" data-user-id="' + escapeHtml(run.id) + '">' +
+                '<span class="tree-run-main">' +
+                  '<p class="tree-run-label">' + escapeHtml(run.title || ("Run " + run.id)) + '</p>' +
+                  '<p class="tree-run-sub">' + escapeHtml((run.start || {}).name || "Unknown") + ' &rarr; ' + escapeHtml((run.end || {}).name || "Unknown") + '</p>' +
+                '</span>' +
+              '</button>' +
+              '<button class="row-action" type="button" data-action="delete-user" data-user-id="' + escapeHtml(run.id) + '" title="Delete run">&times;</button>' +
+            '</div>'
+          );
+        })
         .join("");
     }
 
-    function renderFolderNode(folderKey, label, count, childrenHtml, options = {}) {
+    function renderFolderNode(folderKey, label, count, childrenHtml, options) {
+      const opts = options || {};
       const collapsed = Boolean(state.collapsedFolders[folderKey]);
       const visible = Boolean(state.visibleFolders[folderKey]);
-      const extraControl = options.extraControl || "";
-      const folderMeta = options.meta || `${count} runs`;
+      const meta = opts.meta || (count + " run" + (count === 1 ? "" : "s"));
+      const builtin = opts.builtin === true;
+      const actions = opts.actions || "";
 
-      return `
-        <section class="tree-folder">
-          <div class="tree-folder-row">
-            <button class="disclosure" type="button" data-action="toggle-collapse" data-folder-key="${escapeHtml(folderKey)}">${collapsed ? ">" : "v"}</button>
-            <span class="folder-icon">[+]</span>
-            <p class="tree-folder-label">${escapeHtml(label)}</p>
-            <span class="tree-folder-meta">${escapeHtml(folderMeta)}</span>
-            ${extraControl}
-            <label class="tree-toggle">
-              <input type="checkbox" data-action="toggle-folder" data-folder-key="${escapeHtml(folderKey)}" ${visible ? "checked" : ""}>
-              map
-            </label>
-          </div>
-          <div class="tree-folder-children ${collapsed ? "hidden" : ""}">
-            ${childrenHtml}
-          </div>
-        </section>
-      `;
+      return (
+        '<section class="tree-folder" data-builtin="' + (builtin ? "true" : "false") + '">' +
+          '<div class="tree-folder-row">' +
+            '<button class="disclosure" type="button" data-action="toggle-collapse" data-folder-key="' + escapeHtml(folderKey) + '" aria-label="Expand or collapse">' + (collapsed ? '▸' : '▾') + '</button>' +
+            '<p class="tree-folder-label">' + escapeHtml(label) + '</p>' +
+            '<span class="tree-folder-meta">' + escapeHtml(meta) + '</span>' +
+            actions +
+            '<label class="tree-toggle">' +
+              '<input type="checkbox" data-action="toggle-folder" data-folder-key="' + escapeHtml(folderKey) + '" ' + (visible ? "checked" : "") + '>' +
+              'Show' +
+            '</label>' +
+          '</div>' +
+          '<div class="tree-folder-children ' + (collapsed ? "hidden" : "") + '">' +
+            childrenHtml +
+          '</div>' +
+        '</section>'
+      );
     }
 
     function renderRunTree() {
@@ -1023,23 +1132,18 @@ _PAGE_TEMPLATE = """
 
       const blueBookNode = renderFolderNode(
         BLUE_BOOK_FOLDER_KEY,
-        "blue book runs",
+        "Blue Book",
         state.blueBookSummaries.length,
         blueBookRows,
-        {
-          meta: `${state.blueBookSummaries.length} runs`,
-          extraControl: `<button class="tiny" type="button" data-action="load-blue">${state.blueBookAllLoaded ? "Reload" : "Load"}</button>`,
-        }
+        { meta: state.blueBookSummaries.length + " runs", builtin: true }
       );
 
       const rootNode = renderFolderNode(
         ROOT_USER_FOLDER_KEY,
-        "user root runs",
+        "My Runs",
         rootRuns.length,
         rootRows,
-        {
-          meta: `${rootRuns.length} runs`,
-        }
+        { meta: rootRuns.length + " run" + (rootRuns.length === 1 ? "" : "s"), builtin: true }
       );
 
       const userFolderNodes = state.userFolders
@@ -1047,84 +1151,79 @@ _PAGE_TEMPLATE = """
         .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
         .map((folder) => {
           const folderRuns = userRunsForFolder(folder.id);
-          return renderFolderNode(folder.id, folder.name, folderRuns.length, renderUserRows(folderRuns), {
-            meta: `${folderRuns.length} runs`,
-          });
+          const actions =
+            '<button class="row-action rename" type="button" data-action="rename-folder" data-folder-key="' + escapeHtml(folder.id) + '" title="Rename folder">&#9998;</button>' +
+            '<button class="row-action" type="button" data-action="delete-folder" data-folder-key="' + escapeHtml(folder.id) + '" title="Delete folder">&times;</button>';
+          return renderFolderNode(folder.id, folder.name, folderRuns.length, renderUserRows(folderRuns), { actions });
         })
         .join("");
 
-      treeEl.innerHTML = `
-        <div class="tree-root-row">
-          <span class="folder-icon">[+]</span>
-          <p class="tree-root-label">runs</p>
-        </div>
-        <div class="tree-children">
-          ${blueBookNode}
-          ${rootNode}
-          ${userFolderNodes}
-        </div>
-      `;
+      const isCompletelyEmpty = !state.userRuns.length && !state.userFolders.length && !state.blueBookSummaries.length;
+      if (isCompletelyEmpty) {
+        treeEl.innerHTML = '<div class="tree-empty">No runs yet. Enter a start and end above, then click Save Run to create your first one.</div>';
+        return;
+      }
+
+      treeEl.innerHTML = blueBookNode + rootNode + userFolderNodes;
     }
 
     async function ensureBlueBookRunLoaded(runId) {
       const key = String(runId);
-      if (state.blueBookRunsById[key]) {
-        return state.blueBookRunsById[key];
-      }
+      if (state.blueBookRunsById[key]) return state.blueBookRunsById[key];
 
-      const response = await fetch(`/api/bluebook/runs/${encodeURIComponent(runId)}?direction=forward`);
+      const response = await fetch("/api/bluebook/runs/" + encodeURIComponent(runId) + "?direction=forward");
       const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Unable to load blue book run.");
-      }
+      if (!response.ok) throw new Error(payload.error || "Unable to load blue book run.");
       state.blueBookRunsById[key] = payload;
       return payload;
     }
 
     async function loadAllBlueBookRuns() {
-      const statusEl = document.getElementById("bluebookStatus");
-      statusEl.textContent = "Loading blue book route geometry...";
+      if (state.blueBookLoadInFlight) return state.blueBookLoadInFlight;
 
-      const response = await fetch("/api/bluebook/runs/all");
-      const payload = await response.json();
+      const promise = (async () => {
+        setMapStatus("Loading blue book route geometry...");
+        const response = await fetch("/api/bluebook/runs/all");
+        const payload = await response.json();
 
-      if (!response.ok) {
-        statusEl.textContent = payload.error || "Failed to load blue book route geometry.";
-        return false;
+        if (!response.ok) {
+          setMapStatus(payload.error || "Failed to load blue book route geometry.");
+          return false;
+        }
+
+        state.blueBookRunsById = {};
+        (payload.runs || []).forEach((run) => {
+          state.blueBookRunsById[String(run.id)] = run;
+        });
+        state.blueBookAllLoaded = true;
+
+        const loadedCount = Object.keys(state.blueBookRunsById).length;
+        setMapStatus("Loaded geometry for " + loadedCount + " blue book runs.");
+        setTimeout(() => setMapStatus(""), 3000);
+
+        redrawBlueBookLayer();
+        return true;
+      })();
+
+      state.blueBookLoadInFlight = promise;
+      try {
+        return await promise;
+      } finally {
+        state.blueBookLoadInFlight = null;
       }
-
-      state.blueBookRunsById = {};
-      (payload.runs || []).forEach((run) => {
-        state.blueBookRunsById[String(run.id)] = run;
-      });
-      state.blueBookAllLoaded = true;
-
-      const loadedCount = Object.keys(state.blueBookRunsById).length;
-      statusEl.textContent = `Loaded geometry for ${loadedCount} blue book runs.`;
-
-      redrawBlueBookLayer();
-      return true;
     }
 
     async function loadBlueBookSummaries() {
-      const statusEl = document.getElementById("bluebookStatus");
       const response = await fetch("/api/bluebook/runs");
       const payload = await response.json();
 
       if (!response.ok) {
-        statusEl.textContent = payload.error || "Failed to load blue book runs.";
         state.blueBookSummaries = [];
         renderRunTree();
         return;
       }
 
       state.blueBookSummaries = payload.runs || [];
-      if (!state.blueBookSummaries.length) {
-        statusEl.textContent = payload.message || "No blue book file found.";
-      } else {
-        statusEl.textContent = `Loaded ${state.blueBookSummaries.length} summaries from ${payload.source}.`;
-      }
-
       renderRunTree();
     }
 
@@ -1145,11 +1244,6 @@ _PAGE_TEMPLATE = """
       renderFolderSelect();
       redrawUserFolderLayers();
       renderRunTree();
-
-      const storageEl = document.getElementById("userStorage");
-      if (state.storageSource) {
-        storageEl.textContent = `User runs are stored at ${state.storageSource}`;
-      }
     }
 
     function renderSuggestions(kind) {
@@ -1163,15 +1257,9 @@ _PAGE_TEMPLATE = """
       }
 
       container.innerHTML = options
-        .map((result, index) => `
-          <button
-            class="suggestion-item"
-            type="button"
-            data-action="pick-suggestion"
-            data-kind="${kind}"
-            data-index="${index}"
-          >${escapeHtml(result.name || "Unnamed location")}</button>
-        `)
+        .map((result, index) =>
+          '<button class="suggestion-item" type="button" data-action="pick-suggestion" data-kind="' + kind + '" data-index="' + index + '">' + escapeHtml(result.name || "Unnamed location") + '</button>'
+        )
         .join("");
       container.classList.add("show");
     }
@@ -1188,9 +1276,7 @@ _PAGE_TEMPLATE = """
       byKind.forEach(({ key, color }) => {
         (state.searchSuggestions[key] || []).forEach((result) => {
           const coords = result.coordinates || [];
-          if (!Array.isArray(coords) || coords.length !== 2) {
-            return;
-          }
+          if (!Array.isArray(coords) || coords.length !== 2) return;
 
           const latLng = [coords[1], coords[0]];
           previewPoints.push(latLng);
@@ -1202,13 +1288,11 @@ _PAGE_TEMPLATE = """
             fillOpacity: 0.82,
             opacity: 0.95,
           }).addTo(state.searchLayer);
-          marker.bindTooltip(`${key}: ${result.name || "location"}`);
+          marker.bindTooltip(key + ": " + (result.name || "location"));
         });
       });
 
-      if (!previewPoints.length) {
-        return;
-      }
+      if (!previewPoints.length) return;
 
       const bounds = L.latLngBounds(previewPoints);
       if (bounds.isValid()) {
@@ -1232,12 +1316,10 @@ _PAGE_TEMPLATE = """
         return;
       }
 
-      const response = await fetch(`/api/locations/search?q=${encodeURIComponent(normalized)}&limit=6`);
+      const response = await fetch("/api/locations/search?q=" + encodeURIComponent(normalized) + "&limit=6");
       const payload = await response.json();
 
-      if (seq !== state.searchSeq[kind]) {
-        return;
-      }
+      if (seq !== state.searchSeq[kind]) return;
 
       if (!response.ok) {
         state.searchSuggestions[kind] = [];
@@ -1274,38 +1356,99 @@ _PAGE_TEMPLATE = """
       });
     }
 
+    async function deleteUserRun(runId) {
+      if (!window.confirm("Delete this run? This cannot be undone.")) return;
+      const response = await fetch("/api/user-runs/" + encodeURIComponent(runId), { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        document.getElementById("userRunError").textContent = payload.error || "Could not delete run.";
+        return;
+      }
+      state.userRuns = state.userRuns.filter((run) => String(run.id) !== String(runId));
+      if (state.selectedRun && state.selectedRun.source === "user" && String(state.selectedRun.id) === String(runId)) {
+        deselectRun();
+      } else {
+        redrawUserFolderLayers();
+        renderRunTree();
+      }
+    }
+
+    async function renameFolder(folderId) {
+      const folder = state.userFolders.find((item) => item.id === folderId);
+      const current = folder ? folder.name : "";
+      const next = window.prompt("Rename folder:", current);
+      if (next === null) return;
+      const trimmed = String(next).trim();
+      if (!trimmed || trimmed === current) return;
+
+      const response = await fetch("/api/folders/" + encodeURIComponent(folderId), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        document.getElementById("userRunError").textContent = payload.error || "Could not rename folder.";
+        return;
+      }
+      state.userFolders = state.userFolders.map((item) => (item.id === folderId ? payload.folder : item));
+      renderFolderSelect();
+      renderRunTree();
+    }
+
+    async function deleteFolder(folderId) {
+      const folder = state.userFolders.find((item) => item.id === folderId);
+      const label = folder ? folder.name : folderId;
+      const folderRunCount = state.userRuns.filter((run) => run.folder_id === folderId).length;
+      const message = folderRunCount > 0
+        ? 'Delete folder "' + label + '"? Its ' + folderRunCount + ' run(s) will move to My Runs.'
+        : 'Delete folder "' + label + '"?';
+      if (!window.confirm(message)) return;
+
+      const response = await fetch("/api/folders/" + encodeURIComponent(folderId), { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        document.getElementById("userRunError").textContent = payload.error || "Could not delete folder.";
+        return;
+      }
+
+      state.userFolders = state.userFolders.filter((item) => item.id !== folderId);
+      state.userRuns = state.userRuns.map((run) => (run.folder_id === folderId ? { ...run, folder_id: null } : run));
+      delete state.visibleFolders[folderId];
+      delete state.collapsedFolders[folderId];
+      if (state.folderLayers[folderId]) {
+        state.folderLayers[folderId].clearLayers();
+        if (state.map.hasLayer(state.folderLayers[folderId])) {
+          state.map.removeLayer(state.folderLayers[folderId]);
+        }
+        delete state.folderLayers[folderId];
+      }
+      renderFolderSelect();
+      redrawUserFolderLayers();
+      renderRunTree();
+    }
+
     function wireRunTreeEvents() {
       const treeEl = document.getElementById("runTree");
 
       treeEl.addEventListener("change", async (event) => {
         const target = event.target;
-        if (!(target instanceof HTMLInputElement)) {
-          return;
-        }
-        if (target.dataset.action !== "toggle-folder") {
-          return;
-        }
+        if (!(target instanceof HTMLInputElement)) return;
+        if (target.dataset.action !== "toggle-folder") return;
 
         const folderKey = target.dataset.folderKey;
         const visible = target.checked;
 
-        if (folderKey === BLUE_BOOK_FOLDER_KEY && visible && !state.blueBookAllLoaded) {
-          const loaded = await loadAllBlueBookRuns();
-          if (!loaded) {
-            target.checked = false;
-            setFolderVisibility(folderKey, false);
-            return;
-          }
-        }
+        await setFolderVisibility(folderKey, visible);
 
-        setFolderVisibility(folderKey, visible);
+        if (folderKey === BLUE_BOOK_FOLDER_KEY && visible && !state.blueBookAllLoaded) {
+          target.checked = false;
+        }
       });
 
       treeEl.addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-action]");
-        if (!button) {
-          return;
-        }
+        if (!button) return;
 
         const action = button.dataset.action;
         const userError = document.getElementById("userRunError");
@@ -1322,7 +1465,7 @@ _PAGE_TEMPLATE = """
           const runId = button.dataset.runId;
           try {
             const run = await ensureBlueBookRunLoaded(runId);
-            focusRun(run, "blue book", BLUE_BOOK_COLOR, true);
+            focusRun(run, "Blue Book", BLUE_BOOK_COLOR, true);
           } catch (error) {
             userError.textContent = error.message || "Unable to load blue book run.";
           }
@@ -1332,17 +1475,28 @@ _PAGE_TEMPLATE = """
         if (action === "show-user") {
           const runId = button.dataset.userId;
           const run = state.userRuns.find((item) => String(item.id) === String(runId));
-          if (!run) {
-            return;
-          }
+          if (!run) return;
           const folderKey = run.folder_id || ROOT_USER_FOLDER_KEY;
           focusRun(run, folderName(folderKey), colorForFolder(folderKey), true);
           return;
         }
 
-        if (action === "load-blue") {
-          await loadAllBlueBookRuns();
-          renderRunTree();
+        if (action === "delete-user") {
+          event.stopPropagation();
+          await deleteUserRun(button.dataset.userId);
+          return;
+        }
+
+        if (action === "rename-folder") {
+          event.stopPropagation();
+          await renameFolder(button.dataset.folderKey);
+          return;
+        }
+
+        if (action === "delete-folder") {
+          event.stopPropagation();
+          await deleteFolder(button.dataset.folderKey);
+          return;
         }
       });
     }
@@ -1350,17 +1504,13 @@ _PAGE_TEMPLATE = """
     function wireSuggestionEvents() {
       document.querySelector(".sidebar").addEventListener("click", (event) => {
         const button = event.target.closest("button[data-action='pick-suggestion']");
-        if (!button) {
-          return;
-        }
+        if (!button) return;
 
         const kind = button.dataset.kind;
         const index = Number(button.dataset.index || -1);
         const options = state.searchSuggestions[kind] || [];
         const selected = options[index];
-        if (!selected) {
-          return;
-        }
+        if (!selected) return;
 
         const inputEl = document.getElementById(kind === "origin" ? "originInput" : "destinationInput");
         inputEl.value = selected.name || "";
@@ -1391,30 +1541,20 @@ _PAGE_TEMPLATE = """
         drawer.classList.toggle("hidden");
         if (!drawer.classList.contains("hidden")) {
           const folderInput = document.getElementById("folderNameInput");
-          if (folderInput) {
-            folderInput.focus();
-          }
+          if (folderInput) folderInput.focus();
         }
       });
 
       document.addEventListener("click", (event) => {
-        if (drawer.classList.contains("hidden")) {
-          return;
-        }
+        if (drawer.classList.contains("hidden")) return;
         const target = event.target;
-        if (!(target instanceof Node)) {
-          return;
-        }
-        if (drawer.contains(target) || addButton.contains(target)) {
-          return;
-        }
+        if (!(target instanceof Node)) return;
+        if (drawer.contains(target) || addButton.contains(target)) return;
         drawer.classList.add("hidden");
       });
 
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          drawer.classList.add("hidden");
-        }
+        if (event.key === "Escape") drawer.classList.add("hidden");
       });
     }
 
@@ -1441,7 +1581,7 @@ _PAGE_TEMPLATE = """
         }
 
         const endpoint = updatingSelectedUserRun
-          ? `/api/user-runs/${encodeURIComponent(selected.id)}`
+          ? "/api/user-runs/" + encodeURIComponent(selected.id)
           : "/api/run";
         const response = await fetch(endpoint, {
           method: updatingSelectedUserRun ? "PUT" : "POST",
@@ -1458,9 +1598,7 @@ _PAGE_TEMPLATE = """
         if (updatingSelectedUserRun) {
           let replaced = false;
           state.userRuns = state.userRuns.map((item) => {
-            if (String(item.id) !== String(payload.id)) {
-              return item;
-            }
+            if (String(item.id) !== String(payload.id)) return item;
             replaced = true;
             return payload;
           });
@@ -1471,7 +1609,6 @@ _PAGE_TEMPLATE = """
           state.userRuns = [payload, ...state.userRuns.filter((item) => item.id !== payload.id)];
         }
         redrawUserFolderLayers();
-        renderRunTree();
 
         const folderKey = payload.folder_id || ROOT_USER_FOLDER_KEY;
         focusRun(payload, folderName(folderKey), colorForFolder(folderKey), true);
@@ -1481,6 +1618,14 @@ _PAGE_TEMPLATE = """
         renderSuggestions("origin");
         renderSuggestions("destination");
         updateSearchPreviewMarkers();
+      });
+    }
+
+    function wireCancelEdit() {
+      const button = document.getElementById("cancelEditButton");
+      if (!button) return;
+      button.addEventListener("click", () => {
+        deselectRun();
       });
     }
 
@@ -1520,6 +1665,18 @@ _PAGE_TEMPLATE = """
       });
     }
 
+    function wireDetailsToggle() {
+      const button = document.getElementById("detailsToggle");
+      const body = document.getElementById("detailsBody");
+      if (!button || !body) return;
+      button.addEventListener("click", () => {
+        state.detailsHidden = !state.detailsHidden;
+        body.classList.toggle("hidden", state.detailsHidden);
+        button.textContent = state.detailsHidden ? "Show" : "Hide";
+        button.setAttribute("aria-expanded", state.detailsHidden ? "false" : "true");
+      });
+    }
+
     async function boot() {
       initMap();
       wireAddDrawer();
@@ -1528,6 +1685,8 @@ _PAGE_TEMPLATE = """
       wireBlueBookSearch();
       wireGenerateRunForm();
       wireCreateFolderForm();
+      wireCancelEdit();
+      wireDetailsToggle();
       wireLocationSearch("originInput", "origin");
       wireLocationSearch("destinationInput", "destination");
 
@@ -1536,6 +1695,7 @@ _PAGE_TEMPLATE = """
       renderDetails(null, "");
       setSelectedRun(null);
       refreshSaveButtonLabel();
+      refreshModeBanner();
 
       setTimeout(() => {
         state.map.invalidateSize();
@@ -2052,6 +2212,59 @@ def _update_user_run(run_id: int, origin: str, destination: str, folder_id: str 
     return updated_run
 
 
+def _delete_user_run(run_id: int) -> dict[str, Any]:
+    with _USER_STORE_LOCK:
+        store = _ensure_user_store_loaded()
+        runs = store["runs"]
+        index = next(
+            (idx for idx, run in enumerate(runs) if _normalize_run_id(run.get("id"), 0) == run_id),
+            None,
+        )
+        if index is None:
+            return {"error": f"User run {run_id} not found."}
+        runs.pop(index)
+        _save_user_store()
+        return {"deleted": run_id}
+
+
+def _rename_user_folder(folder_id: str, new_name: str) -> dict[str, Any]:
+    normalized_name = _normalize_folder_name(new_name)
+    if not normalized_name:
+        return {"error": "Folder name is required."}
+
+    with _USER_STORE_LOCK:
+        store = _ensure_user_store_loaded()
+        folder = next(
+            (item for item in store["folders"] if isinstance(item, dict) and str(item.get("id")) == str(folder_id)),
+            None,
+        )
+        if folder is None:
+            return {"error": f"Folder '{folder_id}' not found."}
+        folder["name"] = normalized_name
+        _save_user_store()
+        return {"folder": folder}
+
+
+def _delete_user_folder(folder_id: str) -> dict[str, Any]:
+    with _USER_STORE_LOCK:
+        store = _ensure_user_store_loaded()
+        folders = store["folders"]
+        index = next(
+            (idx for idx, folder in enumerate(folders) if isinstance(folder, dict) and str(folder.get("id")) == str(folder_id)),
+            None,
+        )
+        if index is None:
+            return {"error": f"Folder '{folder_id}' not found."}
+        folders.pop(index)
+
+        for run in store["runs"]:
+            if isinstance(run, dict) and str(run.get("folder_id") or "") == str(folder_id):
+                run["folder_id"] = None
+
+        _save_user_store()
+        return {"deleted": folder_id}
+
+
 def _search_locations(query: str, limit: int = 6) -> list[dict[str, Any]]:
     cleaned_query = _normalize_folder_name(query)
     if len(cleaned_query) < 2:
@@ -2240,6 +2453,35 @@ def update_user_run(run_id: int):
         return jsonify(run_obj), 422
 
     return jsonify(run_obj)
+
+
+@app.delete("/api/user-runs/<int:run_id>")
+def delete_user_run_endpoint(run_id: int):
+    result = _delete_user_run(run_id)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@app.patch("/api/folders/<folder_id>")
+def rename_folder_endpoint(folder_id: str):
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name") or "").strip()
+    result = _rename_user_folder(folder_id, name)
+    if "error" in result:
+        message = str(result.get("error") or "")
+        if "not found" in message.lower():
+            return jsonify(result), 404
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+@app.delete("/api/folders/<folder_id>")
+def delete_folder_endpoint(folder_id: str):
+    result = _delete_user_folder(folder_id)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)
 
 
 @app.get("/api/locations/search")
