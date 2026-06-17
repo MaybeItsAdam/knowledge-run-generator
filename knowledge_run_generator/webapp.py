@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WEB_HOST = "127.0.0.1"
 DEFAULT_WEB_PORT = 7481
 DEFAULT_BLUE_BOOK_FILE = PROJECT_ROOT / "constants" / "runPoints.json"
+DEFAULT_POIS_FILE = PROJECT_ROOT / "constants" / "knowledge_pois.json"
 BLUE_BOOK_FOLDER_KEY = "blue-book-runs"
 ROOT_USER_FOLDER_KEY = "__root_user__"
 
@@ -43,6 +44,7 @@ DEFAULT_USER_RUNS_FILE = _default_user_runs_file()
 app = Flask(__name__)
 app.config["BLUE_BOOK_FILE"] = DEFAULT_BLUE_BOOK_FILE
 app.config["USER_RUNS_FILE"] = DEFAULT_USER_RUNS_FILE
+app.config["POIS_FILE"] = DEFAULT_POIS_FILE
 
 _GRAPH = None
 _GRAPH_LOCK = threading.Lock()
@@ -492,6 +494,35 @@ _PAGE_TEMPLATE = """
 
     .details-body.hidden { display: none; }
 
+    .poi-controls {
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+      padding: .55rem .65rem;
+      margin-bottom: .6rem;
+      border: 1px solid var(--border, #e2e8f0);
+      border-radius: 8px;
+      font-size: .82rem;
+    }
+    .poi-toggle {
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      cursor: pointer;
+    }
+    .poi-radius {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+      color: var(--muted);
+    }
+    .poi-radius.disabled { opacity: .45; }
+    .poi-radius input[type="range"] { width: 100%; }
+    .details-poi { margin-top: .5rem; font-size: .8rem; }
+    .details-poi .poi-group-start { color: #16a34a; font-weight: 600; }
+    .details-poi .poi-group-end { color: #dc2626; font-weight: 600; }
+    .details-poi ul { margin: .15rem 0 .5rem; padding-left: 1rem; }
+
     .details-meta {
       color: var(--muted);
       font-size: .8rem;
@@ -599,6 +630,17 @@ _PAGE_TEMPLATE = """
         <div id="folderError" class="status-error"></div>
       </div>
 
+      <div id="poiControls" class="poi-controls">
+        <label class="poi-toggle">
+          <input id="poiHighlight" type="checkbox">
+          Highlight Surrounding POIs
+        </label>
+        <div class="poi-radius">
+          <span id="poiRadiusLabel">Search radius: 0.25 miles</span>
+          <input id="poiRadius" type="range" min="0.05" max="1.0" step="0.05" value="0.25">
+        </div>
+      </div>
+
       <section id="runDetails" class="details">
         <header class="details-header">
           <p id="detailsTitle" class="details-title">No run selected</p>
@@ -646,7 +688,18 @@ _PAGE_TEMPLATE = """
       searchSeq: { origin: 0, destination: 0 },
       debounceTimers: { origin: null, destination: null },
       detailsHidden: false,
+      poiLayer: null,
+      pois: [],
+      poisLoaded: false,
+      poiHighlightEnabled: false,
+      poiRadiusMiles: 0.25,
+      selectedRunPayload: null,
+      poiMatches: null,
     };
+
+    const POI_START_COLOR = "#16a34a"; // green: within radius of the run start
+    const POI_END_COLOR = "#dc2626";   // red: within radius of the run end
+    const METERS_PER_MILE = 1609.34;
 
     function escapeHtml(value) {
       return String(value || "")
@@ -678,6 +731,7 @@ _PAGE_TEMPLATE = """
 
       state.searchLayer = L.layerGroup().addTo(state.map);
       state.focusLayer = L.layerGroup().addTo(state.map);
+      state.poiLayer = L.layerGroup().addTo(state.map);
 
       window.addEventListener("resize", () => {
         state.map.invalidateSize();
@@ -812,7 +866,10 @@ _PAGE_TEMPLATE = """
 
     function deselectRun() {
       state.selectedRun = null;
+      state.selectedRunPayload = null;
+      state.poiMatches = null;
       state.focusLayer.clearLayers();
+      if (state.poiLayer) state.poiLayer.clearLayers();
       clearForm();
       refreshSaveButtonLabel();
       refreshModeBanner();
@@ -904,7 +961,22 @@ _PAGE_TEMPLATE = """
           '<span class="stat-chip">' + duration.toFixed(0) + ' s</span>' +
           '<span class="stat-chip">' + steps.length + ' step' + (steps.length === 1 ? '' : 's') + '</span>' +
         '</div>' +
+        renderPoiMatchesBlock() +
         stepsBlock;
+    }
+
+    function renderPoiMatchesBlock() {
+      const matches = state.poiMatches;
+      if (!matches) return '';
+      const group = (label, cls, items) =>
+        '<div class="' + cls + '">' + label + ' (' + items.length + ')</div>' +
+        (items.length
+          ? '<ul>' + items.map((p) => '<li>' + escapeHtml(p.name || '') + '</li>').join('') + '</ul>'
+          : '');
+      return '<div class="details-poi">' +
+        group('Start POIs', 'poi-group-start', matches.start) +
+        group('End POIs', 'poi-group-end', matches.end) +
+        '</div>';
     }
 
     function drawRunLayer(runPayload, targetLayer, color, tagLabel, onFocusClick) {
@@ -972,9 +1044,89 @@ _PAGE_TEMPLATE = """
         }
       }
 
+      state.selectedRunPayload = runPayload;
+      state.selectedRunTag = tagLabel;
+      renderPoiHighlight();
       renderDetails(runPayload, tagLabel);
       setSelectedRun(runPayload);
       renderRunTree();
+    }
+
+    async function ensurePoisLoaded() {
+      if (state.poisLoaded) return;
+      try {
+        const resp = await fetch("/api/pois");
+        const data = await resp.json();
+        state.pois = Array.isArray(data.pois) ? data.pois : [];
+      } catch (err) {
+        state.pois = [];
+      }
+      state.poisLoaded = true;
+    }
+
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (d) => (d * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    // Recompute the POI circles, markers and match lists for the selected run.
+    function renderPoiHighlight() {
+      if (state.poiLayer) state.poiLayer.clearLayers();
+      state.poiMatches = null;
+      const run = state.selectedRunPayload;
+      if (!state.poiHighlightEnabled || !run) return;
+
+      const start = (run.start || {}).coordinates;
+      const end = (run.end || {}).coordinates;
+      const radiusM = state.poiRadiusMiles * METERS_PER_MILE;
+      const hasStart = Array.isArray(start) && start.length === 2;
+      const hasEnd = Array.isArray(end) && end.length === 2;
+
+      if (hasStart) {
+        L.circle([start[1], start[0]], { radius: radiusM, color: POI_START_COLOR, weight: 1, fillOpacity: 0.05 }).addTo(state.poiLayer);
+      }
+      if (hasEnd) {
+        L.circle([end[1], end[0]], { radius: radiusM, color: POI_END_COLOR, weight: 1, fillOpacity: 0.05 }).addTo(state.poiLayer);
+      }
+
+      const startMatches = [];
+      const endMatches = [];
+      for (const poi of state.pois) {
+        const c = poi.coordinates;
+        if (!Array.isArray(c) || c.length !== 2) continue;
+        const lon = c[0];
+        const lat = c[1];
+        const inStart = hasStart && haversineMeters(lat, lon, start[1], start[0]) <= radiusM;
+        const inEnd = hasEnd && haversineMeters(lat, lon, end[1], end[0]) <= radiusM;
+        if (!inStart && !inEnd) continue;
+        const color = inStart ? POI_START_COLOR : POI_END_COLOR;
+        if (inStart) startMatches.push(poi);
+        else endMatches.push(poi);
+        const marker = L.circleMarker([lat, lon], {
+          radius: 4,
+          color,
+          fillColor: color,
+          fillOpacity: 0.8,
+          weight: 1,
+        }).addTo(state.poiLayer);
+        marker.bindTooltip(escapeHtml(poi.name || ""));
+      }
+      state.poiMatches = { start: startMatches, end: endMatches };
+    }
+
+    // Toggle/slider entry point: lazily fetch the dataset, then redraw.
+    async function refreshPoiHighlight() {
+      if (state.poiHighlightEnabled) await ensurePoisLoaded();
+      renderPoiHighlight();
+      if (state.selectedRunPayload) {
+        renderDetails(state.selectedRunPayload, state.selectedRunTag || "");
+      }
     }
 
     function redrawUserFolderLayers() {
@@ -1677,6 +1829,32 @@ _PAGE_TEMPLATE = """
       });
     }
 
+    function wirePoiControls() {
+      const checkbox = document.getElementById("poiHighlight");
+      const slider = document.getElementById("poiRadius");
+      const label = document.getElementById("poiRadiusLabel");
+      const radiusWrap = document.querySelector(".poi-radius");
+      const updateLabel = () => {
+        if (label) label.textContent = "Search radius: " + state.poiRadiusMiles.toFixed(2) + " miles";
+        if (radiusWrap) radiusWrap.classList.toggle("disabled", !state.poiHighlightEnabled);
+      };
+      updateLabel();
+      if (checkbox) {
+        checkbox.addEventListener("change", () => {
+          state.poiHighlightEnabled = checkbox.checked;
+          updateLabel();
+          refreshPoiHighlight();
+        });
+      }
+      if (slider) {
+        slider.addEventListener("input", () => {
+          state.poiRadiusMiles = parseFloat(slider.value);
+          updateLabel();
+          if (state.poiHighlightEnabled) refreshPoiHighlight();
+        });
+      }
+    }
+
     async function boot() {
       initMap();
       wireAddDrawer();
@@ -1687,6 +1865,7 @@ _PAGE_TEMPLATE = """
       wireCreateFolderForm();
       wireCancelEdit();
       wireDetailsToggle();
+      wirePoiControls();
       wireLocationSearch("originInput", "origin");
       wireLocationSearch("destinationInput", "destination");
 
@@ -2495,6 +2674,24 @@ def location_search():
 
     results = _search_locations(query, limit=limit)
     return jsonify({"results": results})
+
+
+@app.get("/api/pois")
+def api_pois():
+    """Serve the geocoded Knowledge points of interest for map highlighting.
+
+    Returns an empty list when knowledge_pois.json has not been generated yet
+    (run scripts/extract_pois.py then scripts/geocode_pois.py), so the UI and
+    the smoke tests work without the dataset present.
+    """
+    path = Path(app.config.get("POIS_FILE", DEFAULT_POIS_FILE))
+    if not path.exists():
+        return jsonify({"pois": []})
+    try:
+        pois = json.loads(path.read_text())
+    except (ValueError, OSError):
+        return jsonify({"pois": []})
+    return jsonify({"pois": pois})
 
 
 def main() -> None:

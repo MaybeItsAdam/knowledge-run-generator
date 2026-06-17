@@ -31,11 +31,15 @@ class WebappSmokeTests(unittest.TestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.user_runs_path = Path(self.tmp_dir.name) / "user_runs.json"
         webapp.app.config["USER_RUNS_FILE"] = self.user_runs_path
+        self.pois_path = Path(self.tmp_dir.name) / "knowledge_pois.json"
+        self._pois_default = webapp.app.config.get("POIS_FILE")
+        webapp.app.config["POIS_FILE"] = self.pois_path
         webapp._USER_STORE_CACHE = None
         self.client = webapp.app.test_client()
 
     def tearDown(self):
         self.tmp_dir.cleanup()
+        webapp.app.config["POIS_FILE"] = self._pois_default
         webapp._USER_STORE_CACHE = None
 
     def test_index_renders_with_expected_anchors(self):
@@ -84,6 +88,32 @@ class WebappSmokeTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["runs"], [])
         self.assertEqual(payload["folders"], [])
+
+    def test_pois_endpoint_empty_when_dataset_absent(self):
+        # No knowledge_pois.json on disk -> graceful empty list (not a 404/500).
+        response = self.client.get("/api/pois")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIn("pois", payload)
+        self.assertEqual(payload["pois"], [])
+
+    def test_pois_endpoint_serves_dataset(self):
+        sample = [
+            {"name": "Almeida Theatre", "category": "theatre", "kind": "standard",
+             "postal_district": "N1", "source_page": 8, "coordinates": [-0.1030764, 51.5394403]},
+        ]
+        self.pois_path.write_text(json.dumps(sample))
+        response = self.client.get("/api/pois")
+        self.assertEqual(response.status_code, 200)
+        pois = response.get_json()["pois"]
+        self.assertEqual(len(pois), 1)
+        self.assertEqual(pois[0]["name"], "Almeida Theatre")
+        self.assertEqual(len(pois[0]["coordinates"]), 2)
+
+    def test_index_exposes_poi_controls(self):
+        body = self.client.get("/").data.decode()
+        for anchor in ('id="poiHighlight"', 'id="poiRadius"', "renderPoiHighlight", "/api/pois"):
+            self.assertIn(anchor, body, f"missing POI anchor {anchor!r}")
 
     def test_folder_crud_round_trip(self):
         # Create

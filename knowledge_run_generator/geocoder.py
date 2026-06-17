@@ -3,7 +3,8 @@ import re
 
 import osmnx as ox
 from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut
+from geopy.exc import GeocoderTimedOut, GeocoderRateLimited, GeocoderServiceError
+from geopy.extra.rate_limiter import RateLimiter
 import numpy as np
 from sklearn.neighbors import BallTree
 from pathlib import Path
@@ -12,6 +13,75 @@ import json
 from .gazetteer import Gazetteer, semantic_snap
 
 _graph_trees = {}
+
+# Nominatim's usage policy is max 1 request/second. Share a single geolocator
+# wrapped in a RateLimiter across the process so back-to-back calls (e.g. one
+# per run in the bluebook pipeline) don't trip the 429 throttle. error_wait
+# is set high because Nominatim's public instance temp-blocks bursting IPs
+# for tens of seconds — short retries just hit 429 again.
+_geolocator = Nominatim(user_agent="knowledge_run_generator", timeout=10)
+_geocode_throttled = RateLimiter(
+    _geolocator.geocode,
+    min_delay_seconds=1.1,
+    max_retries=3,
+    error_wait_seconds=30.0,
+    swallow_exceptions=False,
+)
+
+# Disk-backed cache so successful lookups survive across invocations and
+# subsequent runs don't re-hit Nominatim. Only successful (lat, lon) results
+# are persisted; misses/errors are not cached so they can be retried later.
+_GEOCODE_CACHE_PATH = Path("/tmp/app_cache/geocode_cache.json")
+_geocode_cache: dict[str, tuple[float, float]] = {}
+
+
+def _load_geocode_cache():
+    if _GEOCODE_CACHE_PATH.exists():
+        try:
+            raw = json.loads(_GEOCODE_CACHE_PATH.read_text())
+            for k, v in raw.items():
+                if isinstance(v, list) and len(v) == 2:
+                    _geocode_cache[k] = (v[0], v[1])
+        except Exception as e:
+            print(f"Warning: failed to load geocode cache: {e}")
+
+
+def _save_geocode_cache():
+    try:
+        _GEOCODE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _GEOCODE_CACHE_PATH.write_text(
+            json.dumps({k: list(v) for k, v in _geocode_cache.items()})
+        )
+    except Exception as e:
+        print(f"Warning: failed to save geocode cache: {e}")
+
+
+_load_geocode_cache()
+
+
+def _geocode_query(query):
+    """Throttled + disk-cached Nominatim geocode. Returns (lat, lon) or None."""
+    if query in _geocode_cache:
+        return _geocode_cache[query]
+    try:
+        location = _geocode_throttled(query)
+    except GeocoderTimedOut:
+        print("Geocoding service timed out.")
+        return None
+    except GeocoderRateLimited:
+        print(f"Geocoding rate-limited after retries; skipping query: {query}")
+        return None
+    except GeocoderServiceError as e:
+        print(f"Geocoding service error: {e}")
+        return None
+    if location is None:
+        return None
+    coords = (location.latitude, location.longitude)
+    _geocode_cache[query] = coords
+    _save_geocode_cache()
+    return coords
+
+
 def load_overrides(path):
     """Load POI overrides from JSON file."""
     if not path or not Path(path).exists():
@@ -37,47 +107,28 @@ def geocode_address(address):
     """
     Convert an address string to (lat, lon) coordinates via Nominatim.
     """
-    geolocator = Nominatim(user_agent="knowledge_run_generator", timeout=10)
-    try:
-        location = geolocator.geocode(f"{address}, London, UK")
-        if location:
-            return (location.latitude, location.longitude)
-        else:
-            print(f"Could not geocode address: {address}")
-            return None
-    except GeocoderTimedOut:
-        print("Geocoding service timed out.")
-        return None
+    coords = _geocode_query(f"{address}, London, UK")
+    if coords:
+        return coords
+    print(f"Could not geocode address: {address}")
+    return None
 
 
 def geocode_intersection(street1, street2):
     """
     Find the intersection of two streets in London.
     """
-    geolocator = Nominatim(user_agent="knowledge_run_generator", timeout=10)
-    query = f"{street1} and {street2}, London, UK"
-    try:
-        location = geolocator.geocode(query)
-        if location:
-            return (location.latitude, location.longitude)
+    for query in (
+        f"{street1} and {street2}, London, UK",
+        f"{street2} and {street1}, London, UK",
+        f"{street1}, {street2}, London, UK",
+    ):
+        coords = _geocode_query(query)
+        if coords:
+            return coords
 
-        # Fallback: try reversed
-        query_rev = f"{street2} and {street1}, London, UK"
-        location = geolocator.geocode(query_rev)
-        if location:
-             return (location.latitude, location.longitude)
-
-        # Fallback: try comma matching
-        query_comma = f"{street1}, {street2}, London, UK"
-        location = geolocator.geocode(query_comma)
-        if location:
-             return (location.latitude, location.longitude)
-
-        print(f"Could not geocode intersection: {street1} & {street2}")
-        return None
-    except GeocoderTimedOut:
-        print("Geocoding service timed out.")
-        return None
+    print(f"Could not geocode intersection: {street1} & {street2}")
+    return None
 
 
 def geocode_and_snap(address, G, poi_overrides=None, gazetteer=None):
