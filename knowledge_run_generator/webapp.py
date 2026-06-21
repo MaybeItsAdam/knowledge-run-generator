@@ -217,6 +217,20 @@ _PAGE_TEMPLATE = """
     button.secondary { background: #d1fae5; }
     button.ghost { background: #edf2fb; font-weight: 550; }
 
+    .explore-toggle {
+      width: 100%;
+      background: #c7d2fe;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .4rem;
+    }
+
+    .explore-toggle.is-active {
+      background: #6366f1;
+      color: #fff;
+    }
+
     .status-error {
       color: var(--warn);
       font-size: .82rem;
@@ -604,6 +618,8 @@ _PAGE_TEMPLATE = """
         <button id="cancelEditButton" class="mode-cancel hidden" type="button">Cancel</button>
       </div>
 
+      <button id="exploreToggle" class="explore-toggle" type="button">&#127757; Explore All Runs &amp; POIs</button>
+
       <form id="userRunForm" class="form-section">
         <div class="search-field">
           <input id="originInput" required autocomplete="off" placeholder="Start (e.g. King's Cross)">
@@ -695,6 +711,9 @@ _PAGE_TEMPLATE = """
       poiRadiusMiles: 0.25,
       selectedRunPayload: null,
       poiMatches: null,
+      exploreMode: false,
+      allPoiLayer: null,
+      savedVisibleFolders: null,
     };
 
     const POI_START_COLOR = "#16a34a"; // green: within radius of the run start
@@ -732,6 +751,7 @@ _PAGE_TEMPLATE = """
       state.searchLayer = L.layerGroup().addTo(state.map);
       state.focusLayer = L.layerGroup().addTo(state.map);
       state.poiLayer = L.layerGroup().addTo(state.map);
+      state.allPoiLayer = L.layerGroup().addTo(state.map);
 
       window.addEventListener("resize", () => {
         state.map.invalidateSize();
@@ -1127,6 +1147,86 @@ _PAGE_TEMPLATE = """
       if (state.selectedRunPayload) {
         renderDetails(state.selectedRunPayload, state.selectedRunTag || "");
       }
+    }
+
+    const EXPLORE_POI_COLOR = "#7c3aed"; // purple: every Knowledge POI in explore mode
+
+    // Draw every POI in the dataset on its own layer (independent of the
+    // per-run highlight). Only active while explore mode is on.
+    async function renderAllPois() {
+      if (!state.allPoiLayer) return;
+      state.allPoiLayer.clearLayers();
+      if (!state.exploreMode) return;
+
+      await ensurePoisLoaded();
+      for (const poi of state.pois) {
+        const c = poi.coordinates;
+        if (!Array.isArray(c) || c.length !== 2) continue;
+        const marker = L.circleMarker([c[1], c[0]], {
+          radius: 3,
+          color: EXPLORE_POI_COLOR,
+          fillColor: EXPLORE_POI_COLOR,
+          fillOpacity: 0.7,
+          weight: 1,
+        }).addTo(state.allPoiLayer);
+        marker.bindTooltip(escapeHtml(poi.name || ""));
+      }
+    }
+
+    // Fit the map to every run currently drawn on a visible folder layer.
+    function fitAllRuns() {
+      const bounds = L.latLngBounds([]);
+      Object.values(state.folderLayers).forEach((layer) => {
+        if (!state.map.hasLayer(layer)) return;
+        layer.eachLayer((sublayer) => {
+          if (sublayer instanceof L.Polyline) bounds.extend(sublayer.getBounds());
+        });
+      });
+      if (bounds.isValid()) state.map.fitBounds(bounds, { padding: [40, 40] });
+    }
+
+    // Toggle the "show everything" view: all folders visible + all POIs drawn.
+    async function setExploreMode(on) {
+      state.exploreMode = Boolean(on);
+
+      const button = document.getElementById("exploreToggle");
+      if (button) {
+        button.classList.toggle("is-active", state.exploreMode);
+        button.innerHTML = state.exploreMode
+          ? "&#10005; Exit Explore Mode"
+          : "&#127757; Explore All Runs &amp; POIs";
+      }
+
+      if (state.exploreMode) {
+        state.savedVisibleFolders = { ...state.visibleFolders };
+        const folderKeys = [
+          BLUE_BOOK_FOLDER_KEY,
+          ROOT_USER_FOLDER_KEY,
+          ...state.userFolders.map((folder) => folder.id),
+        ];
+        for (const folderKey of folderKeys) {
+          await setFolderVisibility(folderKey, true, false);
+        }
+        await renderAllPois();
+        renderRunTree();
+        fitAllRuns();
+      } else {
+        if (state.savedVisibleFolders) {
+          state.visibleFolders = { ...state.savedVisibleFolders };
+          state.savedVisibleFolders = null;
+        }
+        syncFolderLayers();
+        if (state.allPoiLayer) state.allPoiLayer.clearLayers();
+        renderRunTree();
+      }
+    }
+
+    function wireExploreToggle() {
+      const button = document.getElementById("exploreToggle");
+      if (!button) return;
+      button.addEventListener("click", () => {
+        setExploreMode(!state.exploreMode);
+      });
     }
 
     function redrawUserFolderLayers() {
@@ -1866,6 +1966,7 @@ _PAGE_TEMPLATE = """
       wireCancelEdit();
       wireDetailsToggle();
       wirePoiControls();
+      wireExploreToggle();
       wireLocationSearch("originInput", "origin");
       wireLocationSearch("destinationInput", "destination");
 

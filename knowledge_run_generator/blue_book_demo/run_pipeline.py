@@ -36,6 +36,20 @@ from knowledge_run_generator.gazetteer import Gazetteer, preflight_run
 from knowledge_run_generator import caller
 
 
+def _json_default(o):
+    """JSON fallback for numpy scalars.
+
+    osmnx/validator math returns numpy types (``bool_``, ``int64``,
+    ``float64``) that leak into the QA metrics. The stdlib encoder can't
+    serialise them, which previously crashed the whole run *after* the
+    routes were computed. Coerce anything with ``.item()`` to its Python
+    scalar; everything else is a genuine bug worth surfacing.
+    """
+    if hasattr(o, "item"):
+        return o.item()
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
@@ -378,7 +392,15 @@ def _remove_backtracks(G, waypoint_nodes, start_coords, end_coords):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def process_runs(output_file, limit=None, export_geojson=False, network_type="drive"):
+def process_runs(output_file, limit=None, export_geojson=False, network_type="drive",
+                 select_ids=None):
+    """Process Blue Book runs into ``output_file``.
+
+    ``select_ids`` (an iterable of run ids) restricts processing to those runs;
+    when given, the completeness gate is skipped because the output is an
+    intentional subset. ``limit`` still caps the *first N* runs for quick demos.
+    """
+    select_ids = set(select_ids) if select_ids is not None else None
     runs_data = []
     processed_ids = set()
     qa_results = {}
@@ -478,6 +500,9 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         if limit and len(runs_data) >= limit:
             print(f"Reached limit of {limit} runs. Stopping.")
             break
+
+        if select_ids is not None and run_id not in select_ids:
+            continue
 
         if run_id in processed_ids:
             continue
@@ -755,7 +780,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             if len(runs_data) % 5 == 0:
                 print(f"  Saving progress ({len(runs_data)} runs)...")
                 with open(output_file, "w") as f:
-                    json.dump(runs_data, f, indent=2)
+                    json.dump(runs_data, f, indent=2, default=_json_default)
 
         except Exception as e:
             print(f"  ERROR processing Run {run_id}: {e}")
@@ -769,13 +794,13 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
     # Final save
     # ------------------------------------------------------------------
     with open(output_file, "w") as f:
-        json.dump(runs_data, f, indent=2)
+        json.dump(runs_data, f, indent=2, default=_json_default)
     print(f"\nSaved {len(runs_data)} runs to {output_file}")
 
     # QA report
     qa_path = output_file.parent / "qa_report.json"
     with open(qa_path, "w") as f:
-        json.dump(qa_results, f, indent=2)
+        json.dump(qa_results, f, indent=2, default=_json_default)
     print(f"QA report saved to {qa_path}")
 
     # Optional GeoJSON export
@@ -783,24 +808,51 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         geojson_path = output_file.parent / "routes.geojson"
         export_all_runs_geojson(geojson_features, geojson_path)
 
-    # Summary with categorised failure reasons
-    total = len(qa_results)
-    passed = sum(1 for v in qa_results.values() if v.get("passed"))
+    # ------------------------------------------------------------------
+    # Completeness gate: every Blue Book run must be present in the output.
+    # A missing id means the run was skipped (geocode/route failure) and
+    # silently dropped — the exact failure mode that left the app at 30/320.
+    # When the full set is processed (no --limit) we surface the gap loudly
+    # and write it into the QA report so it can be triaged without re-running.
+    # ------------------------------------------------------------------
+    expected_ids = set(run_ids_sorted)
+    present_ids = {r["id"] for r in runs_data}
+    missing_ids = sorted(expected_ids - present_ids)
+    if limit is None and select_ids is None:
+        qa_results["_completeness"] = {
+            "expected": len(expected_ids),
+            "present": len(present_ids),
+            "missing_ids": missing_ids,
+        }
+        with open(qa_path, "w") as f:
+            json.dump(qa_results, f, indent=2, default=_json_default)
+        print(f"\n{'='*60}")
+        if missing_ids:
+            print(f"COMPLETENESS: {len(present_ids)}/{len(expected_ids)} runs present. "
+                  f"MISSING {len(missing_ids)}: {missing_ids}")
+        else:
+            print(f"COMPLETENESS: all {len(expected_ids)} runs present. ✓")
+
+    # Summary with categorised failure reasons. Exclude the non-run
+    # "_completeness" sentinel so the pass/fail tally stays per-run.
+    run_qa = {k: v for k, v in qa_results.items() if isinstance(k, int)}
+    total = len(run_qa)
+    passed = sum(1 for v in run_qa.values() if v.get("passed"))
     failed = total - passed
     print(f"\n{'='*60}")
     print(f"SUMMARY: {passed}/{total} runs passed validation, {failed} failed.")
     if failed:
-        fail_ids = [k for k, v in qa_results.items() if not v.get("passed")]
+        fail_ids = [k for k, v in run_qa.items() if not v.get("passed")]
         print(f"  Failed runs: {fail_ids[:20]}{'...' if len(fail_ids) > 20 else ''}")
 
         # Triage buckets
-        preflight_fails = sum(1 for v in qa_results.values() if not v.get("preflight_ok", True))
+        preflight_fails = sum(1 for v in run_qa.values() if not v.get("preflight_ok", True))
         directness_fails = sum(
-            1 for v in qa_results.values()
+            1 for v in run_qa.values()
             if v.get("preflight_ok", True) and v.get("is_direct") is False
         )
         legality_fails = sum(
-            1 for v in qa_results.values()
+            1 for v in run_qa.values()
             if v.get("preflight_ok", True) and v.get("legal") is False
         )
         print(f"  Triage: preflight={preflight_fails}  directness={directness_fails}  "

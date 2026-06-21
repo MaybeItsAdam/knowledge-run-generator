@@ -1,4 +1,23 @@
 {
+    "BARON'S COURT STATION W14": {
+        "lat": 51.4903477,
+        "lon": -0.2144055,
+        "on_street": "BARONS COURT ROAD"
+    },
+    "ROYAL OAK STATION W2": [
+        51.5191279,
+        -0.188624
+    ],
+    "BLACKFRIARS STATION EC4": {
+        "lat": 51.5104871,
+        "lon": -0.1032417,
+        "on_street": "QUEEN VICTORIA STREET"
+    },
+    "BRYANSTON STREET W1": {
+        "lat": 51.5140828,
+        "lon": -0.1602144,
+        "on_street": "BRYANSTON STREET"
+    },
     "RITZ HOTEL SW1": [
         51.5074,
         -0.1419

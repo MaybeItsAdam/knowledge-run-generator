@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 import sys
@@ -6,25 +8,41 @@ import math
 import re
 import sqlite3
 import threading
+import time
+from pathlib import Path
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Try to find the Mapbox Access Token in the environment or read it from The-Blue-App/.env.local
-MAPBOX_TOKEN = os.environ.get("EXPO_PUBLIC_MAPBOX_PK")
+# Repo-relative paths so the script works on any checkout, not just one
+# machine. ROOT is the knowledge-run-generator repo root.
+ROOT = Path(__file__).resolve().parents[1]
 
-if not MAPBOX_TOKEN:
-    # Try reading from The-Blue-App/.env.local
-    env_path = "/Users/adam/Documents/Programming/The Knowledge Things/The-Blue-App/.env.local"
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                if line.startswith("EXPO_PUBLIC_MAPBOX_PK="):
-                    MAPBOX_TOKEN = line.split("=", 1)[1].strip()
-                    break
+# Mapbox token resolution, in priority order:
+#   1. an explicit --token,
+#   2. the MAPBOX_TOKEN / EXPO_PUBLIC_MAPBOX_PK environment variables,
+#   3. an explicit --env-file (a dotenv holding EXPO_PUBLIC_MAPBOX_PK= or
+#      MAPBOX_TOKEN=).
+# There is deliberately no implicit path to any sibling project: this tool is
+# self-contained, and a consumer (e.g. an app) points it at config explicitly.
+_TOKEN_ENV_KEYS = ("MAPBOX_TOKEN", "EXPO_PUBLIC_MAPBOX_PK")
 
-if not MAPBOX_TOKEN:
-    print("Error: EXPO_PUBLIC_MAPBOX_PK not found in environment or .env.local")
-    sys.exit(1)
+
+def _load_mapbox_token(env_file: str | None = None, token: str | None = None) -> str | None:
+    if token:
+        return token.strip()
+    for key in _TOKEN_ENV_KEYS:
+        val = os.environ.get(key)
+        if val:
+            return val.strip()
+    if env_file and Path(env_file).exists():
+        for line in Path(env_file).read_text().splitlines():
+            for key in _TOKEN_ENV_KEYS:
+                if line.startswith(f"{key}="):
+                    return line.split("=", 1)[1].strip()
+    return None
+
+# Resolved in main() from env var / --env-file; geocode_mapbox reads it.
+MAPBOX_TOKEN: str | None = None
 
 # Ensure cache directory exists
 CACHE_DIR = "/tmp/app_cache"
@@ -44,9 +62,9 @@ LONDON_BBOX = "-0.55,51.25,0.35,51.70"
 # legacy mapbox.places geocoder (which mis-resolved named venues).
 SEARCHBOX_URL = "https://api.mapbox.com/search/searchbox/v1/forward"
 
-DEFAULT_IN = "/Users/adam/Documents/Programming/The Knowledge Things/knowledge_run_generator/constants/extracted_pois.json"
-DEFAULT_OUT = "/Users/adam/Documents/Programming/The Knowledge Things/knowledge_run_generator/constants/knowledge_pois.json"
-DEFAULT_FAILED_OUT = "/Users/adam/Documents/Programming/The Knowledge Things/knowledge_run_generator/constants/knowledge_pois_failed.json"
+DEFAULT_IN = str(ROOT / "constants" / "extracted_pois.json")
+DEFAULT_OUT = str(ROOT / "constants" / "knowledge_pois.json")
+DEFAULT_FAILED_OUT = str(ROOT / "constants" / "knowledge_pois_failed.json")
 
 # Initialize SQLite cache
 conn = sqlite3.connect(DB_PATH)
@@ -121,7 +139,7 @@ def save_cached_geocode(query, lat, lng):
     conn.close()
 
 
-def geocode_mapbox(query, proximity=LONDON_PROXIMITY):
+def geocode_mapbox(query, proximity=LONDON_PROXIMITY, retries=4):
     # The result depends on the proximity bias, so it forms part of the cache
     # key; the "sb|" prefix namespaces Search Box results from any legacy entries.
     cache_key = f"sb|{query}|prox={proximity}"
@@ -139,16 +157,35 @@ def geocode_mapbox(query, proximity=LONDON_PROXIMITY):
         "bbox": LONDON_BBOX,
     }
 
-    try:
-        resp = requests.get(SEARCHBOX_URL, params=params, timeout=15)
+    # Distinguish a *transient* failure (DNS/connection/timeout/429/5xx) from a
+    # genuine "no match". Only the former is retried with backoff. This matters
+    # because misses are not cached, so a network blip would otherwise mark a
+    # perfectly geocodable point as permanently failed — exactly what happened
+    # when this ran concurrently with the OSM graph download (NameResolutionError
+    # on ~half the points). A 200 with no features is a real miss -> return None.
+    def _backoff(attempt):
+        # Don't sleep after the final attempt — we're about to give up anyway.
+        if attempt < retries - 1:
+            time.sleep(min(2 ** attempt, 8))
+
+    for attempt in range(retries):
+        try:
+            resp = requests.get(SEARCHBOX_URL, params=params, timeout=15)
+        except requests.exceptions.RequestException:
+            _backoff(attempt)
+            continue
         if resp.status_code == 200:
             features = resp.json().get("features")
             if features:
                 lng, lat = features[0]["geometry"]["coordinates"]
                 save_cached_geocode(cache_key, lat, lng)
                 return lat, lng
-    except Exception as e:
-        print(f"Error geocoding {query}: {e}")
+            return None  # genuine miss
+        if resp.status_code in (429, 500, 502, 503, 504):
+            _backoff(attempt)
+            continue
+        # Other 4xx: a request we shouldn't blindly retry.
+        return None
     return None
 
 
@@ -217,8 +254,17 @@ def main():
     parser.add_argument("--in", dest="in_path", default=DEFAULT_IN, help="Extracted POIs JSON.")
     parser.add_argument("--out", default=DEFAULT_OUT, help="Output geocoded JSON.")
     parser.add_argument("--failed-out", default=DEFAULT_FAILED_OUT, help="Where to record names that failed to geocode.")
+    parser.add_argument("--token", default=None, help="Mapbox access token (overrides env / --env-file).")
+    parser.add_argument("--env-file", default=None, help="Path to a dotenv holding MAPBOX_TOKEN= or EXPO_PUBLIC_MAPBOX_PK=.")
     parser.add_argument("--limit", type=int, default=None, help="Only geocode the first N points (debug).")
     args = parser.parse_args()
+
+    global MAPBOX_TOKEN
+    MAPBOX_TOKEN = _load_mapbox_token(args.env_file, args.token)
+    if not MAPBOX_TOKEN:
+        print("Error: no Mapbox token. Set MAPBOX_TOKEN / EXPO_PUBLIC_MAPBOX_PK, "
+              "or pass --token / --env-file.")
+        sys.exit(1)
 
     if not os.path.exists(args.in_path):
         print(f"Error: {args.in_path} not found. Run extract_pois.py first.")

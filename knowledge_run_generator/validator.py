@@ -70,24 +70,23 @@ def load_turn_restrictions(G, cache_dir="cache"):
     south, north = min(ys), max(ys)
     west, east = min(xs), max(xs)
 
-    query = f"""
-[out:json][timeout:180];
-(
-  relation["type"="restriction"]({south},{west},{north},{east});
-);
-out body;
->;
-out skel qt;
-"""
+    # We only need the restriction relations' member *refs* (from_way,
+    # via_node, to_way) — see _build_prohibited_set, which maps those ids onto
+    # the graph and never touches member geometry. The old query also did
+    # ``>; out skel qt;`` to pull every member way's nodes; over a
+    # Greater-London bbox that payload is what made overpass-api.de return
+    # 406 "query too heavy", silently disabling legality checks. Dropping the
+    # recursion keeps the response small, and we route the request through the
+    # same UA + mirror-failover + backoff used by the POI harvest.
+    query = (
+        f"[out:json][timeout:180];\n"
+        f'relation["type"="restriction"]({south},{west},{north},{east});\n'
+        f"out body;"
+    )
     print("Fetching turn restrictions from Overpass API...")
     try:
-        resp = requests.post(
-            "https://overpass-api.de/api/interpreter",
-            data={"data": query},
-            timeout=200,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        from .osm_pois import fetch_overpass
+        data = fetch_overpass(query)
     except Exception as e:
         print(f"  Warning: Overpass query failed ({e}). Skipping turn restrictions.")
         return set()

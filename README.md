@@ -22,6 +22,7 @@ Subcommands:
 
 | Command | Purpose |
 |---------|---------|
+| `krg generate all` | One-shot rebuild of every dataset the app consumes (POIs → OSM gazetteer → 320 runs → promote into the-blue-app). |
 | `krg web` | Launch the local map-first web app (recommended). |
 | `krg route ORIGIN DESTINATION` | Generate one run via the session API and print The Call. |
 | `krg run ORIGIN DESTINATION` | Legacy run command (landmarks + caller pipeline). |
@@ -186,6 +187,31 @@ curl "http://127.0.0.1:7481/api/locations/search?q=waterloo&limit=6"
 The canonical street-by-street directions for all 320 runs live in two equivalent files:
 - `knowledge_run_generator/blue_book_demo/blue_book_runs_intermediary.txt` — multi-line, one instruction per line. **Used by the pipeline.**
 - `The Blue Book Runs of the Knowledge of London.txt` (repo root) — same content, tab-separated, one run per line. Used by `scripts/strict_route_demo.py`.
+
+### Regenerating everything the app consumes
+
+The generator is self-contained: `krg generate all` rebuilds every dataset into
+its own `constants/` — the geocoded Knowledge Points List, the OSM gazetteer
+seed, all 320 runs — and never reaches into a consumer project. Promotion into
+`the-blue-app` is a separate, gated step (`scripts/promote_to_app.py`).
+
+```bash
+krg generate all                       # fresh rebuild into the generator's constants/
+krg generate all --skip-pois           # reuse knowledge_pois.json; regenerate runs only
+krg generate all --out-dir DIR         # also mirror the outputs verbatim into DIR
+python scripts/promote_to_app.py       # validate + copy into the-blue-app/constants/
+```
+
+The pipeline is gated end to end: a fresh `generate all` regenerates from
+scratch, the completeness check fails loudly if any of the 320 runs are missing,
+and `promote_to_app.py` refuses to overwrite the app's `constants/` unless
+`runPoints.json` has all 320 runs and the POI set is non-empty (it copies
+`knowledge_pois.json` → the app's `knowledgePois.json`; pass `--allow-partial`
+to override). `--out-dir` is a raw mirror that keeps the generator's filenames,
+so for the app use `promote_to_app.py` rather than `--out-dir`. POI geocoding
+(Mapbox) needs a token via `--token`, `MAPBOX_TOKEN` / `EXPO_PUBLIC_MAPBOX_PK`
+in the environment, or `--env-file`; the Points List PDF defaults to
+`extract_pois.py`'s default path (override with `--pdf`).
 
 ### Running the demo
 

@@ -99,6 +99,13 @@ def _extract_name(tags: dict[str, str]) -> str | None:
     return str(name).strip().upper()
 
 
+def fetch_overpass(query: str, url: str = DEFAULT_OVERPASS_URL, retries: int = 3) -> dict:
+    """Public wrapper over :func:`_fetch_overpass` for reuse by other modules
+    (e.g. the turn-restriction fetcher) that want the same UA + mirror
+    failover + backoff behaviour."""
+    return _fetch_overpass(query, url, retries=retries)
+
+
 def _fetch_overpass(query: str, url: str, retries: int = 3) -> dict:
     """Send *query* to Overpass, failing over to mirrors on 406/429/5xx.
 
