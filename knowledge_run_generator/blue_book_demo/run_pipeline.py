@@ -50,6 +50,17 @@ def _json_default(o):
     raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
 
+def _save_runs(output_file, runs_data):
+    """Write ``runs_data`` to *output_file*, ordered by run id.
+
+    Regenerated runs are appended to the end of the in-memory list, so without
+    an explicit sort the file's order drifts from 1..320 after a resume.
+    """
+    ordered = sorted(runs_data, key=lambda r: r.get("id", 0))
+    with open(output_file, "w") as f:
+        json.dump(ordered, f, indent=2, default=_json_default)
+
+
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
@@ -392,13 +403,19 @@ def _remove_backtracks(G, waypoint_nodes, start_coords, end_coords):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def process_runs(output_file, limit=None, export_geojson=False, network_type="drive",
+def process_runs(output_file, limit=None, export_geojson=False, network_type=None,
                  select_ids=None):
     """Process Blue Book runs into ``output_file``.
 
     ``select_ids`` (an iterable of run ids) restricts processing to those runs;
     when given, the completeness gate is skipped because the output is an
-    intentional subset. ``limit`` still caps the *first N* runs for quick demos.
+    intentional subset. Explicitly selected runs are *regenerated* even if they
+    already exist in ``output_file`` — asking for a specific run is a request
+    to redo it, and ``--fresh`` is deliberately unavailable for subsets.
+    ``limit`` still caps the *first N* runs for quick demos.
+
+    ``network_type`` of ``None`` defers to ``load_graph``, which honours
+    ``KRG_GRAPH_NETWORK_TYPE``.
     """
     select_ids = set(select_ids) if select_ids is not None else None
     runs_data = []
@@ -417,6 +434,29 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             print(f"Loaded {len(runs_data)} existing runs from {output_file}")
         except json.JSONDecodeError:
             print("Could not decode existing JSON, starting fresh.")
+
+    # Carry forward the QA records of runs we're not reprocessing. Without
+    # this, a resume (or a single-run regeneration) rewrites qa_report.json
+    # with only the runs touched *this* invocation, silently discarding the
+    # QA record for every run already in runPoints.json.
+    qa_path = output_file.parent / "qa_report.json"
+    if qa_path.exists():
+        try:
+            existing_qa = json.loads(qa_path.read_text())
+            if isinstance(existing_qa, dict):
+                qa_results.update(existing_qa)
+                print(f"Loaded {len(existing_qa)} existing QA records from {qa_path}")
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"Warning: could not read existing QA report: {exc}")
+
+    # Drop the selected runs from the resume set so they are rebuilt rather
+    # than skipped as "already processed".
+    if select_ids:
+        stale = processed_ids & select_ids
+        if stale:
+            runs_data = [r for r in runs_data if r["id"] not in select_ids]
+            processed_ids -= select_ids
+            print(f"Regenerating {len(stale)} already-present run(s): {sorted(stale)}")
 
     # Parse Blue Book directions (using local files in demo directory)
     inter_file = DEMO_DIR / "blue_book_runs_intermediary.txt"
@@ -517,7 +557,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
 
         if not start or not end:
             print(f"  SKIP: Failed to geocode Run {run_id}")
-            qa_results[run_id] = {
+            qa_results[str(run_id)] = {
                 "passed": False,
                 "preflight_ok": False,
                 "preflight_reasons": ["geocode failed for start or end"],
@@ -541,7 +581,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         if not pre.ok:
             for r in pre.reasons:
                 print(f"  [preflight-fail] {r}")
-            qa_results[run_id] = {
+            qa_results[str(run_id)] = {
                 "passed": False,
                 "preflight_ok": False,
                 "preflight_reasons": pre.reasons,
@@ -616,11 +656,17 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
                     exempted_turns.add((f, v, t))
                 except Exception as exc:
                     print(f"  [Patch] Could not resolve exempt_turns triple: {exc}")
+            # The exemption has to reach the *router* too: validating a turn as
+            # excused is pointless if the Dijkstra expansion still refuses to
+            # traverse it, so route against the restriction set minus the
+            # exempted triples.
+            run_prohibited_turns = prohibited_turns
             if exempted_turns:
                 print(f"  [Patch] {len(exempted_turns)} turns exempted")
+                run_prohibited_turns = set(prohibited_turns) - exempted_turns
 
             def _route_fn(G, o, d, wps):
-                return get_constrained_route(G, o, d, wps, prohibited_turns=prohibited_turns, intermediate_streets=intermediate_streets)
+                return get_constrained_route(G, o, d, wps, prohibited_turns=run_prohibited_turns, intermediate_streets=intermediate_streets)
 
             def _validate_fn(G, nodes, o, d, turns, streets, cfg, wps, exempted_turns=None):
                 return validate_route(
@@ -630,7 +676,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
 
             route_nodes, validation, corrections = correct_and_validate(
                 G, start_node, end_node, waypoint_nodes,
-                intermediate_streets, prohibited_turns, street_to_nodes,
+                intermediate_streets, run_prohibited_turns, street_to_nodes,
                 route_fn=_route_fn,
                 validate_fn=_validate_fn,
                 config=run_config,
@@ -658,14 +704,15 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             )
 
             def _route_fn_rev(G, o, d, wps):
-                return get_constrained_route(G, o, d, wps, prohibited_turns=prohibited_turns, intermediate_streets=reverse_streets)
+                return get_constrained_route(G, o, d, wps, prohibited_turns=run_prohibited_turns, intermediate_streets=reverse_streets)
 
             rev_route_nodes, rev_validation, rev_corrections = correct_and_validate(
                 G, end_node, start_node, reverse_waypoints,
-                reverse_streets, prohibited_turns, street_to_nodes,
+                reverse_streets, run_prohibited_turns, street_to_nodes,
                 route_fn=_route_fn_rev,
                 validate_fn=_validate_fn,
                 config=run_config,
+                exempted_turns=exempted_turns or None,
             )
 
             if not rev_route_nodes or len(rev_route_nodes) < 2:
@@ -744,7 +791,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             processed_ids.add(run_id)
 
             # QA record — expanded so failures can be triaged without re-running
-            qa_results[run_id] = {
+            qa_results[str(run_id)] = {
                 "passed": validation.passed,
                 "ratio": metrics.get("ratio"),
                 "max_offset_m": metrics.get("max_lateral_offset_m"),
@@ -779,8 +826,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             # Incremental save
             if len(runs_data) % 5 == 0:
                 print(f"  Saving progress ({len(runs_data)} runs)...")
-                with open(output_file, "w") as f:
-                    json.dump(runs_data, f, indent=2, default=_json_default)
+                _save_runs(output_file, runs_data)
 
         except Exception as e:
             print(f"  ERROR processing Run {run_id}: {e}")
@@ -793,12 +839,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
     # ------------------------------------------------------------------
     # Final save
     # ------------------------------------------------------------------
-    with open(output_file, "w") as f:
-        json.dump(runs_data, f, indent=2, default=_json_default)
+    _save_runs(output_file, runs_data)
     print(f"\nSaved {len(runs_data)} runs to {output_file}")
 
     # QA report
-    qa_path = output_file.parent / "qa_report.json"
     with open(qa_path, "w") as f:
         json.dump(qa_results, f, indent=2, default=_json_default)
     print(f"QA report saved to {qa_path}")
@@ -833,9 +877,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         else:
             print(f"COMPLETENESS: all {len(expected_ids)} runs present. ✓")
 
-    # Summary with categorised failure reasons. Exclude the non-run
-    # "_completeness" sentinel so the pass/fail tally stays per-run.
-    run_qa = {k: v for k, v in qa_results.items() if isinstance(k, int)}
+    # Summary with categorised failure reasons. Records are keyed by
+    # stringified run id; exclude the non-run "_completeness" sentinel so the
+    # pass/fail tally stays per-run.
+    run_qa = {k: v for k, v in qa_results.items() if str(k).lstrip("-").isdigit()}
     total = len(run_qa)
     passed = sum(1 for v in run_qa.values() if v.get("passed"))
     failed = total - passed

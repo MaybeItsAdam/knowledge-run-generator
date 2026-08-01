@@ -33,7 +33,9 @@ import pdfplumber
 
 ROOT = Path(__file__).resolve().parents[1]
 
-DEFAULT_PDF = Path("/Users/adam/Downloads/knowledge-of-london-points-list.pdf")
+# The Points List PDF is committed at the repo root, so the default works on
+# any checkout. Override with --pdf to parse a newer edition.
+DEFAULT_PDF = ROOT / "knowledge-of-london-points-list.pdf"
 DEFAULT_OUT = ROOT / "constants" / "extracted_pois.json"
 
 # Geometry thresholds (points). See module docstring.

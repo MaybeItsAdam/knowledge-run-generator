@@ -98,6 +98,12 @@ krg route "Manor House Station" "Gibson Square" --geojson out.geojson
 - `--geojson, -g PATH`: save the route as GeoJSON.
 - `--steps / --no-steps`: print turn-by-turn (default: on).
 
+Note: `krg route` / `Session.run` do not fetch OSM turn restrictions (that would
+put a multi-minute Overpass call in front of a single-run command), so their
+output is not legality-checked. Pass a restriction set explicitly via
+`Session.run(..., prohibited_turns=...)`, or use the Blue Book pipeline, which
+loads and enforces them.
+
 The legacy `krg run` command runs the older landmarks-pipeline and supports:
 - `--plot, -p PATH`: save a route visualisation image.
 - `--geojson, -g PATH`: save the route as GeoJSON.
@@ -199,19 +205,36 @@ seed, all 320 runs — and never reaches into a consumer project. Promotion into
 krg generate all                       # fresh rebuild into the generator's constants/
 krg generate all --skip-pois           # reuse knowledge_pois.json; regenerate runs only
 krg generate all --out-dir DIR         # also mirror the outputs verbatim into DIR
-python scripts/promote_to_app.py       # validate + copy into the-blue-app/constants/
+python scripts/promote_to_app.py --app-dir ../the-blue-app   # validate + copy into the app
 ```
 
 The pipeline is gated end to end: a fresh `generate all` regenerates from
-scratch, the completeness check fails loudly if any of the 320 runs are missing,
-and `promote_to_app.py` refuses to overwrite the app's `constants/` unless
+scratch and **exits non-zero** if any of the 320 runs are missing or the POI set
+is empty (with `--out-dir`, nothing is mirrored on a failed gate).
+`promote_to_app.py` refuses to overwrite the app's `constants/` unless
 `runPoints.json` has all 320 runs and the POI set is non-empty (it copies
 `knowledge_pois.json` → the app's `knowledgePois.json`; pass `--allow-partial`
 to override). `--out-dir` is a raw mirror that keeps the generator's filenames,
-so for the app use `promote_to_app.py` rather than `--out-dir`. POI geocoding
-(Mapbox) needs a token via `--token`, `MAPBOX_TOKEN` / `EXPO_PUBLIC_MAPBOX_PK`
-in the environment, or `--env-file`; the Points List PDF defaults to
-`extract_pois.py`'s default path (override with `--pdf`).
+so for the app use `promote_to_app.py` rather than `--out-dir`.
+
+Requirements for a full rebuild:
+- **Network**: Overpass (graph, turn restrictions, OSM POIs) and Nominatim
+  (run endpoints not covered by `poi_overrides.json`).
+- **Mapbox token** for POI geocoding: `--token`, `MAPBOX_TOKEN` /
+  `EXPO_PUBLIC_MAPBOX_PK` in the environment, or `--env-file`.
+- **Points List PDF**: defaults to `knowledge-of-london-points-list.pdf` at the
+  repo root; override with `--pdf`.
+- **Borough enrichment reference data** (optional):
+  `constants/london_boroughs.geojson` and `constants/yellow_badge_sectors.json`.
+  These are inputs the repo does not ship — when absent, enrichment is skipped
+  with a message and the rest of the build still completes. Pass `--no-enrich`
+  to skip it silently.
+- `krg generate` shells out to `scripts/`, so it needs the repo checkout
+  (`pip install -e .`), not a plain wheel install.
+
+Individual runs can be rebuilt in place: `krg generate runs 12` regenerates run
+12 and merges it back into the existing `runPoints.json`, preserving the QA
+records of every other run.
 
 ### Running the demo
 

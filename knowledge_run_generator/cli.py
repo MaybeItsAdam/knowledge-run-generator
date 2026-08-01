@@ -395,7 +395,16 @@ def regression_diff(baseline, report, strict):
 
 def _repo_paths():
     repo = Path(__file__).resolve().parents[1]
-    return repo, repo / "scripts", repo / "constants"
+    scripts = repo / "scripts"
+    if not scripts.is_dir():
+        # `krg generate` shells out to scripts/ next to the package, which only
+        # exists in a source checkout (or an editable install). A plain
+        # `pip install krg` puts the package in site-packages with no scripts/.
+        raise click.ClickException(
+            f"{scripts} not found. `krg generate` needs the repository "
+            "checkout (clone it and `pip install -e .`)."
+        )
+    return repo, scripts, repo / "constants"
 
 
 def _parse_id_spec(spec: str) -> set[int]:
@@ -458,9 +467,21 @@ def _build_pois(scripts, constants, pdf, token, env_file, limit, enrich):
         # Borough + yellow-badge sector enrichment lives in its own module so
         # this stays a no-op (with a warning) if it isn't present yet.
         try:
-            from knowledge_run_generator.poi_enrichment import enrich_pois
+            from knowledge_run_generator.poi_enrichment import enrich_pois, missing_inputs
         except Exception as exc:  # noqa: BLE001
             click.echo(f"  [enrich] skipped (poi_enrichment unavailable: {exc})")
+            return
+        # The boundary/sector reference files are inputs we don't generate. A
+        # missing one used to raise FileNotFoundError *after* the whole
+        # geocode pass, throwing away the expensive part of the build; skip
+        # with an actionable message instead.
+        missing = missing_inputs()
+        if missing:
+            click.echo(
+                "  [enrich] skipped: missing reference data "
+                + ", ".join(str(p) for p in missing)
+                + " (pass --no-enrich to silence)"
+            )
             return
         path = constants / "knowledge_pois.json"
         pois = enrich_pois(json.loads(path.read_text()))
@@ -633,16 +654,20 @@ def generate_all(out_dir, pdf, token, env_file, skip_pois, skip_osm, resume, no_
     for p in problems:
         click.echo(f"  ! {p}")
 
-    if out_dir:
-        if problems:
-            raise click.ClickException(
-                "Not copying to --out-dir: validation failed. Fix with "
-                "`krg generate runs <missing>` / `krg generate pois`, then rerun."
-            )
+    if out_dir and not problems:
         click.echo(f"\nCopying validated outputs -> {out_dir}")
         _mirror(constants, out_dir)
 
     click.echo(f"\nDone in {time.time() - t0:.0f}s.")
+
+    # The completeness gate has to be a non-zero exit, not just a printed
+    # warning: an incomplete build is exactly the failure this command exists
+    # to catch, and CI/callers only see the status code.
+    if problems:
+        raise click.ClickException(
+            ("Not copying to --out-dir: validation failed. " if out_dir else "Validation failed. ")
+            + "Fix with `krg generate runs <missing>` / `krg generate pois`, then rerun."
+        )
 
 
 if __name__ == "__main__":

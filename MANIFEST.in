@@ -1,3 +1,5 @@
 include README.md
 include LICENSE
+include knowledge-of-london-points-list.pdf
+include "The Blue Book Runs of the Knowledge of London.txt"
 recursive-include knowledge_run_generator/blue_book_demo *.txt *.json

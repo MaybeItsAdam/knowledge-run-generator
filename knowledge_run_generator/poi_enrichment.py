@@ -22,6 +22,21 @@ DEFAULT_BOROUGHS_PATH = _CONSTANTS_DIR / "london_boroughs.geojson"
 DEFAULT_SECTORS_PATH = _CONSTANTS_DIR / "yellow_badge_sectors.json"
 
 
+def missing_inputs(
+    boroughs_path: Path | str = DEFAULT_BOROUGHS_PATH,
+    sectors_path: Path | str = DEFAULT_SECTORS_PATH,
+) -> list[Path]:
+    """Return the enrichment reference files that aren't on disk.
+
+    Both files are *inputs*, not pipeline outputs: the borough boundaries come
+    from the ONS/London Datastore local-authority GeoJSON, and the sector map
+    is hand-maintained. They live under ``constants/``, which is gitignored, so
+    a fresh checkout has neither. Callers use this to skip enrichment with a
+    useful message instead of dying on a bare FileNotFoundError.
+    """
+    return [Path(p) for p in (boroughs_path, sectors_path) if not Path(p).exists()]
+
+
 def load_sectors(path: Path | str = DEFAULT_SECTORS_PATH) -> dict:
     """Load the yellow-badge sector mapping JSON."""
     with open(path, "r", encoding="utf-8") as fh:
