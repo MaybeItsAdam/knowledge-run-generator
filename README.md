@@ -188,6 +188,30 @@ curl "http://127.0.0.1:7481/api/locations/search?q=waterloo&limit=6"
 3. **Route**: feeds both into `geocode_and_snap` and `get_constrained_route`.
 4. **Validate**: writes `qa_report.json` next to the output, summarising preflight, directness, legality, and street-coverage per run.
 
+### How run endpoints resolve
+
+Each run's origin and destination go through the `Gazetteer`, which tries four
+tiers in order and only falls back to the network geocoder if all four miss:
+
+| Tier | Source | Covers (of 640 endpoints) |
+|------|--------|---------------------------|
+| 1 | `poi_overrides.json` — curated corrections | 74 |
+| 2 | `constants/knowledge_pois.json` — the geocoded Points List | 426 |
+| 3 | `constants/`-cached OSM harvest (`krg osm-pois`) | most of the remaining stations |
+| 4 | the alias index — endpoints that name a street | 88 |
+
+Names are matched verbatim, then without the postcode suffix, then
+canonically normalised (so `FITZHARDINGE ST W1` finds *Fitzhardinge Street*).
+Where several points share a name, the endpoint's postcode district picks the
+right one; for streets, the district's centre of mass picks between same-named
+streets across London.
+
+**Build POIs before runs.** `krg generate all` already does this. Running
+`krg generate runs` against an empty `constants/` still works, but every
+unmatched endpoint costs a rate-limited Nominatim round trip and fails
+preflight. Point the pipeline at an existing Points List with
+`KRG_KNOWLEDGE_POIS=/path/to/knowledge_pois.json` if it lives elsewhere.
+
 ### Source data
 
 The canonical street-by-street directions for all 320 runs live in two equivalent files:

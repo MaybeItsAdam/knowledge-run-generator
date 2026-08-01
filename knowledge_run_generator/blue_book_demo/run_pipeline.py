@@ -32,7 +32,9 @@ from knowledge_run_generator.validator import (
 from knowledge_run_generator.corrector import correct_and_validate
 from knowledge_run_generator.geojson_export import route_to_geojson_feature, export_all_runs_geojson
 from knowledge_run_generator.aliases import load_or_build_alias_index
-from knowledge_run_generator.gazetteer import Gazetteer, preflight_run
+from knowledge_run_generator.gazetteer import (
+    DEFAULT_KNOWLEDGE_POIS_PATH, Gazetteer, load_knowledge_pois, preflight_run,
+)
 from knowledge_run_generator import caller
 
 
@@ -114,14 +116,26 @@ def parse_intermediary_file(path):
 # ---------------------------------------------------------------------------
 
 def build_street_index(G, cache_dir):
-    """Build or load a street-name → node-set index from the graph."""
+    """Build or load a street-name → node-set index from the graph.
+
+    Keyed by the graph's fingerprint so an index built against a different
+    graph (or by an older normaliser) is rebuilt rather than reused.
+    """
     import pickle
+    from knowledge_run_generator.aliases import graph_fingerprint
+
     index_path = cache_dir / "street_index.pkl"
+    fingerprint = graph_fingerprint(G)
 
     if index_path.exists():
-        print("Loading street index from cache...")
-        with open(index_path, "rb") as f:
-            return pickle.load(f)
+        try:
+            with open(index_path, "rb") as f:
+                blob = pickle.load(f)
+            if isinstance(blob, dict) and blob.get("fingerprint") == fingerprint:
+                print("Loading street index from cache...")
+                return blob["index"]
+        except Exception as exc:
+            print(f"  Ignoring unreadable street index cache: {exc}")
 
     print("Building street index...")
     street_to_nodes = {}
@@ -137,7 +151,7 @@ def build_street_index(G, cache_dir):
             street_to_nodes[norm].add(v)
 
     with open(index_path, "wb") as f:
-        pickle.dump(street_to_nodes, f)
+        pickle.dump({"fingerprint": fingerprint, "index": street_to_nodes}, f)
 
     return street_to_nodes
 
@@ -516,10 +530,31 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             print(f"  Warning: could not load {osm_poi_cache}: {exc}")
             osm_pois = None
 
+    # Geocoded Knowledge Points List (from `krg generate pois`). Most Blue Book
+    # run endpoints are Points List entries, so this is what keeps the pipeline
+    # off Nominatim — without it every unmatched endpoint costs a rate-limited
+    # network round trip and fails preflight.
+    knowledge_pois = {}
+    for candidate in (
+        os.environ.get("KRG_KNOWLEDGE_POIS"),
+        output_file.parent / "knowledge_pois.json",
+        DEFAULT_KNOWLEDGE_POIS_PATH,
+    ):
+        if not candidate:
+            continue
+        knowledge_pois = load_knowledge_pois(candidate)
+        if knowledge_pois:
+            print(f"Loaded {len(knowledge_pois)} geocoded Knowledge Points from {candidate}.")
+            break
+    if not knowledge_pois:
+        print("  No knowledge_pois.json found — endpoints will fall back to the "
+              "geocoder. Run `krg generate pois` first for a faster, offline resolve.")
+
     gazetteer = Gazetteer(
         overrides=poi_overrides,
         alias_index=alias_index,
         osm_pois=osm_pois,
+        knowledge_pois=knowledge_pois,
     )
 
     # Run-specific patches from local demo directory.

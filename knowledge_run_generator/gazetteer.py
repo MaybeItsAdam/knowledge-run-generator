@@ -32,9 +32,27 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .aliases import AliasIndex
+from .aliases import AliasIndex, normalise as _normalise_name
 
-_POSTCODE_SUFFIX_RE = re.compile(r"\s+[A-Z]{1,2}\d{1,2}[A-Z]?\s*$")
+# Trailing punctuation is tolerated: the Blue Book source has entries like
+# "BROMYARD AVENUE W3." that would otherwise keep their postcode forever.
+_POSTCODE_SUFFIX_RE = re.compile(r"\s+([A-Z]{1,2}\d{1,2}[A-Z]?)\s*[.,]?\s*$")
+
+# The geocoded Knowledge Points List, produced by ``krg generate pois``. It is
+# not committed (``constants/`` is gitignored), so every lookup path treats it
+# as optional.
+DEFAULT_KNOWLEDGE_POIS_PATH = (
+    Path(__file__).resolve().parent.parent / "constants" / "knowledge_pois.json"
+)
+
+
+def _split_postcode(name: str) -> tuple[str, str | None]:
+    """``"MANOR HOUSE STATION N4"`` -> ``("MANOR HOUSE STATION", "N4")``."""
+    upper = (name or "").upper().strip()
+    match = _POSTCODE_SUFFIX_RE.search(upper)
+    if not match:
+        return upper, None
+    return upper[: match.start()].strip(), match.group(1)
 
 # Highway classes we avoid snapping to when a better option exists. Dual
 # carriageways and slip roads are the sources of the "wrong side" bug.
@@ -96,6 +114,8 @@ def _parse_override(value: Any) -> dict | None:
     Accepted forms:
       * ``[lat, lon]`` or ``(lat, lon)``
       * ``{"lat": ..., "lon": ..., "on_street"?: ..., "approach_from"?: ...}``
+      * ``{"coordinates": [lon, lat], ...}`` — the GeoJSON-ordered form written
+        by ``scripts/geocode_pois.py`` for the Knowledge Points List.
     """
     if value is None:
         return None
@@ -105,17 +125,113 @@ def _parse_override(value: Any) -> dict | None:
         except (TypeError, ValueError):
             return None
     if isinstance(value, dict):
-        if "lat" not in value or "lon" not in value:
-            return None
-        try:
-            out = {"lat": float(value["lat"]), "lon": float(value["lon"])}
-        except (TypeError, ValueError):
-            return None
-        for k in ("on_street", "approach_from"):
+        if "lat" in value and "lon" in value:
+            try:
+                out = {"lat": float(value["lat"]), "lon": float(value["lon"])}
+            except (TypeError, ValueError):
+                return None
+        else:
+            coords = value.get("coordinates")
+            if not (isinstance(coords, (list, tuple)) and len(coords) >= 2):
+                return None
+            try:
+                # [lng, lat], per the GeoJSON convention used across the repo.
+                out = {"lat": float(coords[1]), "lon": float(coords[0])}
+            except (TypeError, ValueError):
+                return None
+        for k in ("on_street", "approach_from", "postal_district"):
             if value.get(k):
                 out[k] = str(value[k])
         return out
     return None
+
+
+def load_knowledge_pois(path: str | Path | None = None) -> dict[str, dict]:
+    """Load ``knowledge_pois.json`` into ``{NAME_UPPER: record}``.
+
+    The file is a *list* of geocoded Points List entries; points that failed to
+    geocode carry ``coordinates: null`` and are skipped. Returns an empty dict
+    if the file is absent or unreadable — the caller degrades to the geocoder.
+    """
+    path = Path(path) if path else DEFAULT_KNOWLEDGE_POIS_PATH
+    if not path.exists():
+        return {}
+    try:
+        records = json.loads(path.read_text())
+    except Exception:
+        return {}
+    if not isinstance(records, list):
+        return {}
+
+    out: dict[str, dict] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        name = str(record.get("name") or "").strip().upper()
+        if not name or not record.get("coordinates"):
+            continue
+        # First writer wins, matching the override semantics elsewhere; the
+        # per-postcode disambiguation in _PoiTable handles same-name points.
+        out.setdefault(name, record)
+    return out
+
+
+class _PoiTable:
+    """One lookup tier over a ``{NAME: record}`` dict.
+
+    Three keys are indexed per entry, tried in order by :meth:`lookup`:
+    the verbatim upper-cased name, the name with its postcode suffix
+    stripped, and the canonically normalised stem (which expands
+    abbreviations, so "FITZHARDINGE ST" finds "Fitzhardinge Street").
+
+    Normalised keys can collide — the Points List has several same-named
+    points in different districts — so they map to a *list* and the query's
+    own postcode picks the winner.
+    """
+
+    __slots__ = ("source", "_exact", "_normalised")
+
+    def __init__(self, records: dict | None, source: str):
+        self.source = source
+        self._exact: dict[str, dict] = {}
+        self._normalised: dict[str, list[dict]] = {}
+
+        for key, value in (records or {}).items():
+            parsed = _parse_override(value)
+            if parsed is None:
+                continue
+            upper = str(key).upper().strip()
+            self._exact.setdefault(upper, parsed)
+
+            stem, postcode = _split_postcode(upper)
+            if postcode and not parsed.get("postal_district"):
+                parsed["postal_district"] = postcode
+            self._exact.setdefault(stem, parsed)
+
+            norm = _normalise_name(stem)
+            if norm:
+                self._normalised.setdefault(norm, []).append(parsed)
+
+    def __len__(self) -> int:
+        return len(self._exact)
+
+    def lookup(self, address: str) -> dict | None:
+        upper = address.upper().strip()
+        stem, postcode = _split_postcode(upper)
+
+        for key in (upper, stem):
+            hit = self._exact.get(key)
+            if hit is not None:
+                return hit
+
+        candidates = self._normalised.get(_normalise_name(stem))
+        if not candidates:
+            return None
+        if len(candidates) > 1 and postcode:
+            for candidate in candidates:
+                if str(candidate.get("postal_district", "")).upper() == postcode:
+                    return candidate
+        return candidates[0]
 
 
 class Gazetteer:
@@ -123,17 +239,22 @@ class Gazetteer:
     Resolves human-readable place names into a ``GazetteerEntry`` containing a
     graph node chosen by :func:`semantic_snap`.
 
-    Two lookup paths:
+    Four lookup tiers, tried in order:
       1. ``overrides`` — the manually curated dict (existing
-         ``poi_overrides.json``). Matched exactly, then with the postcode
-         suffix stripped. This is the authoritative source.
-      2. ``osm_pois`` — harvested from OpenStreetMap via
+         ``poi_overrides.json``). This is the authoritative source.
+      2. ``knowledge_pois`` — the geocoded Knowledge Points List produced by
+         ``krg generate pois``. Roughly three quarters of Blue Book run
+         endpoints are Points List entries, so this is what keeps the run
+         pipeline off the rate-limited public geocoder.
+      3. ``osm_pois`` — harvested from OpenStreetMap via
          :mod:`knowledge_run_generator.osm_pois`. Fills in the long tail
-         (pubs, stations, theatres, ...) that would otherwise need a
-         manual override each time a new one shows up.
+         (pubs, stations, theatres, ...).
+      4. the ``alias_index`` — endpoints that are plain streets ("ABERDEEN
+         ROAD N5") resolve straight off the graph, with the postcode
+         district picking between same-named streets across London.
 
-    Overrides always win over OSM POIs so human corrections can't be
-    silently overwritten by a fresh OSM harvest.
+    Earlier tiers always win, so human corrections can't be silently
+    overwritten by a fresh harvest or a Points List re-geocode.
 
     Resolution is cached per graph so repeated lookups in a pipeline run are
     near-free.
@@ -144,48 +265,33 @@ class Gazetteer:
         overrides: dict | None = None,
         alias_index: AliasIndex | None = None,
         osm_pois: dict | None = None,
+        knowledge_pois: dict | None = None,
     ):
         self._overrides_raw: dict[str, Any] = overrides or {}
-        self._overrides: dict[str, dict] = {}
-        for key, value in self._overrides_raw.items():
-            parsed = _parse_override(value)
-            if parsed is not None:
-                self._overrides[key.upper()] = parsed
-
-        self._osm_pois: dict[str, dict] = {}
-        for key, value in (osm_pois or {}).items():
-            parsed = _parse_override(value)
-            if parsed is not None:
-                self._osm_pois[key.upper()] = parsed
+        self._tables = (
+            _PoiTable(self._overrides_raw, "override"),
+            _PoiTable(knowledge_pois, "knowledge_poi"),
+            _PoiTable(osm_pois, "osm"),
+        )
 
         self.alias_index = alias_index
         self._resolve_cache: dict[tuple[int, str], GazetteerEntry | None] = {}
+        self._district_centroids: dict[str, tuple[float, float]] | None = None
+        self._knowledge_pois_raw: dict[str, Any] = knowledge_pois or {}
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def lookup_coords(self, address: str) -> dict | None:
-        """Return the raw coord dict for *address* if one exists.
-
-        Overrides win over OSM POIs. The postcode suffix is stripped
-        on the fallback in both tables.
-        """
+        """Return the raw coord dict for *address* from the first tier that
+        knows it, tagged with ``_source``."""
         if not address:
             return None
-        upper = address.upper()
-
-        if upper in self._overrides:
-            return self._tag_source(dict(self._overrides[upper]), "override")
-        no_pc = _POSTCODE_SUFFIX_RE.sub("", upper).strip()
-        if no_pc != upper and no_pc in self._overrides:
-            return self._tag_source(dict(self._overrides[no_pc]), "override")
-
-        if upper in self._osm_pois:
-            return self._tag_source(dict(self._osm_pois[upper]), "osm")
-        if no_pc != upper and no_pc in self._osm_pois:
-            return self._tag_source(dict(self._osm_pois[no_pc]), "osm")
-
+        for table in self._tables:
+            hit = table.lookup(address)
+            if hit is not None:
+                return self._tag_source(dict(hit), table.source)
         return None
 
     @staticmethod
@@ -203,8 +309,10 @@ class Gazetteer:
 
         record = self.lookup_coords(address)
         if record is None:
-            self._resolve_cache[cache_key] = None
-            return None
+            # Tier 4: the endpoint may be a street rather than a named point.
+            entry = self._resolve_street(address, G)
+            self._resolve_cache[cache_key] = entry
+            return entry
 
         lat = record["lat"]
         lon = record["lon"]
@@ -237,10 +345,95 @@ class Gazetteer:
         self._resolve_cache[cache_key] = entry
         return entry
 
+    # ------------------------------------------------------------------
+    # Tier 4 — street endpoints
+    # ------------------------------------------------------------------
+
+    def _district_centroid(self, postcode: str | None) -> tuple[float, float] | None:
+        """Mean position of the Points List entries in a postal district.
+
+        Used to pick between same-named streets: "HIGH STREET N1" and "HIGH
+        STREET SE1" share a canonical name and therefore a single node set in
+        the alias index, and the district is the only signal in the endpoint
+        that separates them.
+        """
+        if not postcode:
+            return None
+        if self._district_centroids is None:
+            sums: dict[str, list[float]] = {}
+            for value in self._knowledge_pois_raw.values():
+                parsed = _parse_override(value)
+                if parsed is None:
+                    continue
+                district = str(parsed.get("postal_district", "")).upper()
+                if not district:
+                    continue
+                acc = sums.setdefault(district, [0.0, 0.0, 0.0])
+                acc[0] += parsed["lat"]
+                acc[1] += parsed["lon"]
+                acc[2] += 1
+            self._district_centroids = {
+                d: (a[0] / a[2], a[1] / a[2]) for d, a in sums.items() if a[2]
+            }
+        return self._district_centroids.get(postcode.upper())
+
+    def _resolve_street(self, address: str, G) -> GazetteerEntry | None:
+        """Resolve an endpoint that names a street rather than a point.
+
+        Returns the node on that street closest to the endpoint's postal
+        district, or the street's medoid node when there's no district to go
+        on. The entry's coordinate *is* a graph node, so ``snap_distance_m``
+        is 0 by construction.
+        """
+        if self.alias_index is None:
+            return None
+
+        stem, postcode = _split_postcode(address)
+        canonical = self.alias_index.resolve(stem)
+        if canonical is None:
+            return None
+
+        nodes = [n for n in self.alias_index.nodes_for(stem) if n in G.nodes]
+        if not nodes:
+            return None
+
+        anchor = self._district_centroid(postcode)
+        if anchor is not None:
+            node = _closest_node(G, anchor[0], anchor[1], nodes)
+        else:
+            node = _medoid_node(G, nodes)
+        if node is None:
+            return None
+
+        n = G.nodes[node]
+        return GazetteerEntry(
+            canonical_name=canonical,
+            lat=n["y"],
+            lon=n["x"],
+            snapped_node=node,
+            snap_distance_m=0.0,
+            on_street=canonical,
+            source="street",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Semantic snap
 # ---------------------------------------------------------------------------
+
+
+def _medoid_node(G, nodes) -> int | None:
+    """The node of *nodes* closest to their mean position.
+
+    A centre-of-the-street anchor, which is also what a plain geocoder returns
+    for a bare street name — but deterministic and offline.
+    """
+    nodes = list(nodes)
+    if not nodes:
+        return None
+    mean_lat = sum(G.nodes[n]["y"] for n in nodes) / len(nodes)
+    mean_lon = sum(G.nodes[n]["x"] for n in nodes) / len(nodes)
+    return _closest_node(G, mean_lat, mean_lon, nodes)
 
 def _closest_node(G, lat: float, lon: float, candidates) -> int | None:
     best: int | None = None
