@@ -54,6 +54,40 @@ def _split_postcode(name: str) -> tuple[str, str | None]:
         return upper, None
     return upper[: match.start()].strip(), match.group(1)
 
+
+# Words that qualify a station rather than name it. OSM almost never includes
+# "Station" in a station's name tag — Charing Cross is "Charing Cross", Waterloo
+# is "London Waterloo" — while the Blue Book always does, and sometimes adds the
+# operator ("BETHNAL GREEN B_R STATION"). Matching the two means reducing both
+# sides to the bare name.
+_STATION_TOKENS = frozenset({
+    "STATION", "STATIONS", "STN",
+    "BR", "B_R", "BRITISH", "RAIL", "RAILWAY", "MAINLINE",
+    "TUBE", "UNDERGROUND", "OVERGROUND", "DLR", "LU",
+})
+
+_STATION_KINDS = frozenset({"station"})
+
+
+def _looks_like_station(name: str) -> bool:
+    return any(t in _STATION_TOKENS for t in _normalise_name(name).split())
+
+
+def _station_stems(name: str) -> list[str]:
+    """Bare-name keys for a station, most specific first.
+
+    ``"London Waterloo"`` -> ``["LONDON WATERLOO", "WATERLOO"]`` so a query for
+    "WATERLOO STATION" finds it, while "London Bridge" stays reachable under
+    its full name.
+    """
+    tokens = [t for t in _normalise_name(name).split() if t not in _STATION_TOKENS]
+    if not tokens:
+        return []
+    stems = [" ".join(tokens)]
+    if len(tokens) > 1 and tokens[0] == "LONDON":
+        stems.append(" ".join(tokens[1:]))
+    return stems
+
 # Highway classes we avoid snapping to when a better option exists. Dual
 # carriageways and slip roads are the sources of the "wrong side" bug.
 _AVOID_HIGHWAY_CLASSES = {
@@ -142,6 +176,11 @@ def _parse_override(value: Any) -> dict | None:
         for k in ("on_street", "approach_from", "postal_district"):
             if value.get(k):
                 out[k] = str(value[k])
+        # ``kind`` comes from the OSM harvest, ``category`` from the Points List
+        # extractor; either identifies a station for name matching.
+        kind = value.get("kind") or value.get("category")
+        if kind:
+            out["kind"] = str(kind)
         return out
     return None
 
@@ -189,12 +228,16 @@ class _PoiTable:
     own postcode picks the winner.
     """
 
-    __slots__ = ("source", "_exact", "_normalised")
+    __slots__ = ("source", "_exact", "_normalised", "_stations")
 
     def __init__(self, records: dict | None, source: str):
         self.source = source
         self._exact: dict[str, dict] = {}
         self._normalised: dict[str, list[dict]] = {}
+        # Station bare-name -> records. Consulted only for station-shaped
+        # queries, so "FINSBURY PARK N4" still means the park and only
+        # "FINSBURY PARK STATION N4" reaches the station.
+        self._stations: dict[str, list[dict]] = {}
 
         for key, value in (records or {}).items():
             parsed = _parse_override(value)
@@ -212,6 +255,10 @@ class _PoiTable:
             if norm:
                 self._normalised.setdefault(norm, []).append(parsed)
 
+            if parsed.get("kind") in _STATION_KINDS or _looks_like_station(stem):
+                for station_key in _station_stems(stem):
+                    self._stations.setdefault(station_key, []).append(parsed)
+
     def __len__(self) -> int:
         return len(self._exact)
 
@@ -225,6 +272,11 @@ class _PoiTable:
                 return hit
 
         candidates = self._normalised.get(_normalise_name(stem))
+        if not candidates and _looks_like_station(stem):
+            for station_key in _station_stems(stem):
+                candidates = self._stations.get(station_key)
+                if candidates:
+                    break
         if not candidates:
             return None
         if len(candidates) > 1 and postcode:

@@ -159,14 +159,15 @@ class Session:
         a cold Session() into a 3-minute network call. Use
         ``krg osm-pois`` explicitly to refresh.
         """
-        cache = self._cache_dir / "osm_pois.json"
-        if not cache.exists():
-            return None
-        try:
-            blob = json.loads(cache.read_text())
-            return blob.get("pois") or {}
-        except Exception:
-            return None
+        import os
+
+        from .osm_pois import load_cached_pois
+
+        return load_cached_pois(
+            os.environ.get("KRG_OSM_POIS"),
+            Path(__file__).resolve().parent.parent / "constants" / "osm_pois.json",
+            self._cache_dir / "osm_pois.json",
+        ) or None
 
     @staticmethod
     def _load_overrides(src) -> dict:

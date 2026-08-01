@@ -45,14 +45,22 @@ _OVERPASS_HEADERS = {
 # snap hints (e.g. a station should prefer its on-street approach).
 _TAG_GROUPS: tuple[tuple[str, str, str], ...] = (
     ("amenity", "pub|restaurant|cafe|theatre|cinema|hospital|police|"
-                "library|townhall|place_of_worship|bank|university|college",
+                "library|townhall|place_of_worship|bank|university|college|"
+                "school|prison|courthouse|fire_station|marketplace|"
+                "arts_centre|conference_centre|embassy",
      "amenity"),
-    ("tourism", "hotel|museum|attraction|gallery|hostel", "tourism"),
-    ("railway", "station", "station"),
+    ("tourism", "hotel|museum|attraction|gallery|hostel|zoo", "tourism"),
+    # Stations are the single biggest category of Blue Book run endpoints that
+    # isn't in the Points List. `halt` catches the smaller National Rail stops,
+    # and bus_station catches coach stations (e.g. Victoria Coach Station).
+    ("railway", "station|halt", "station"),
     ("public_transport", "station", "station"),
+    ("amenity", "bus_station", "station"),
+    ("aeroway", "terminal", "station"),
     ("leisure", "stadium|sports_centre|park", "leisure"),
     ("historic", "memorial|monument|castle", "historic"),
     ("shop", "department_store|mall", "shop"),
+    ("office", "diplomatic", "office"),
 )
 
 
@@ -264,6 +272,33 @@ def fetch_pois(
         }, indent=2, sort_keys=True))
 
     return all_pois
+
+
+def load_cached_pois(*candidates: Path | str | None) -> dict[str, dict]:
+    """Return the POI dict from the first readable harvest cache.
+
+    The default cache lives in ``/tmp``, which is wiped on reboot — and when it
+    vanishes the gazetteer's OSM tier silently disappears with it, taking the
+    station endpoints down to the geocoder. Callers pass the places a harvest
+    might reasonably live (env var, output dir, ``constants/``, the /tmp cache)
+    and take whichever exists.
+    """
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if not path.exists():
+            continue
+        try:
+            blob = json.loads(path.read_text())
+        except Exception as exc:  # noqa: BLE001 - report and try the next one
+            print(f"  Warning: could not load {path}: {exc}")
+            continue
+        pois = blob.get("pois") if isinstance(blob, dict) else None
+        if pois:
+            print(f"  {len(pois)} OSM POIs from {path}.")
+            return pois
+    return {}
 
 
 def merge_with_overrides(overrides: dict, osm_pois: dict) -> dict:

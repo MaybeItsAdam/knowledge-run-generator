@@ -35,6 +35,7 @@ from knowledge_run_generator.aliases import load_or_build_alias_index
 from knowledge_run_generator.gazetteer import (
     DEFAULT_KNOWLEDGE_POIS_PATH, Gazetteer, load_knowledge_pois, preflight_run,
 )
+from knowledge_run_generator.osm_pois import load_cached_pois
 from knowledge_run_generator import caller
 
 
@@ -519,16 +520,15 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     # Optional OSM POI harvest (Quick Win 8): if the cache exists we fold it
     # into the gazetteer as a second-chance lookup behind the curated
     # overrides. Populate it with `krg osm-pois`; we never auto-fetch here.
-    osm_poi_cache = cache_dir / "osm_pois.json"
-    osm_pois = None
-    if osm_poi_cache.exists():
-        try:
-            blob = json.loads(osm_poi_cache.read_text())
-            osm_pois = blob.get("pois") or {}
-            print(f"  {len(osm_pois)} OSM POIs from {osm_poi_cache}.")
-        except Exception as exc:
-            print(f"  Warning: could not load {osm_poi_cache}: {exc}")
-            osm_pois = None
+    osm_pois = load_cached_pois(
+        os.environ.get("KRG_OSM_POIS"),
+        output_file.parent / "osm_pois.json",
+        PROJECT_ROOT / "constants" / "osm_pois.json",
+        cache_dir / "osm_pois.json",
+    )
+    if not osm_pois:
+        print("  No OSM POI harvest found — run `krg osm-pois` so station "
+              "endpoints resolve without the geocoder.")
 
     # Geocoded Knowledge Points List (from `krg generate pois`). Most Blue Book
     # run endpoints are Points List entries, so this is what keeps the pipeline

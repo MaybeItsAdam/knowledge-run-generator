@@ -127,6 +127,86 @@ class StreetFallbackTests(unittest.TestCase):
         self.assertIsNone(gz.resolve("NOWHERE AT ALL W1", self.G))
 
 
+class StationMatchingTests(unittest.TestCase):
+    """OSM names stations without the word "Station"; the Blue Book always
+    includes it, and sometimes the operator too."""
+
+    def setUp(self):
+        self.G = _graph()
+        self.alias_index = build_alias_index(self.G)
+        # Shaped like a real `krg osm-pois` harvest.
+        self.harvest = {
+            "CHARING CROSS": {"lat": 51.508, "lon": -0.124, "kind": "station"},
+            "LONDON WATERLOO": {"lat": 51.503, "lon": -0.113, "kind": "station"},
+            "LONDON KING'S CROSS": {"lat": 51.531, "lon": -0.124, "kind": "station"},
+            "BOW CHURCH": {"lat": 51.527, "lon": -0.021, "kind": "station"},
+            "BETHNAL GREEN": {"lat": 51.527, "lon": -0.060, "kind": "station"},
+            "VICTORIA COACH STATION": {"lat": 51.492, "lon": -0.148, "kind": "station"},
+            "FINSBURY PARK": {"lat": 51.564, "lon": -0.106, "kind": "station"},
+        }
+        self.gz = Gazetteer(osm_pois=self.harvest, alias_index=self.alias_index)
+
+    def test_station_suffix_is_not_required_by_osm(self):
+        for endpoint in ("CHARING CROSS STATION WC2", "BOW CHURCH STATION E3"):
+            with self.subTest(endpoint=endpoint):
+                self.assertIsNotNone(self.gz.lookup_coords(endpoint))
+
+    def test_london_prefixed_national_rail_names_match(self):
+        self.assertAlmostEqual(
+            self.gz.lookup_coords("WATERLOO STATION SE1")["lat"], 51.503
+        )
+        self.assertAlmostEqual(
+            self.gz.lookup_coords("KINGS CROSS STATION N1")["lat"], 51.531
+        )
+
+    def test_operator_qualifiers_are_ignored(self):
+        # "B_R" is British Rail, as it appears in the Blue Book source.
+        self.assertIsNotNone(self.gz.lookup_coords("BETHNAL GREEN B_R STATION E2"))
+
+    def test_name_already_containing_station_still_matches(self):
+        self.assertIsNotNone(self.gz.lookup_coords("VICTORIA COACH STATION SW1"))
+
+    def test_station_aliases_are_only_reachable_by_station_queries(self):
+        # "WATERLOO" exists solely as a station stem of "London Waterloo", so a
+        # query without a station word must not reach it — otherwise the bare
+        # name of every station would shadow streets and areas that share it.
+        self.assertIsNone(self.gz.lookup_coords("WATERLOO SE1"))
+        self.assertIsNotNone(self.gz.lookup_coords("WATERLOO STATION SE1"))
+
+    def test_a_harvest_name_is_reachable_directly(self):
+        # Entries are still indexed under their own name. Note the harvest is
+        # keyed by name, so a station and a park called "Finsbury Park" collide
+        # upstream in parse_overpass and only one survives.
+        self.assertIsNotNone(self.gz.lookup_coords("FINSBURY PARK N4"))
+
+    def test_curated_override_still_wins_over_the_harvest(self):
+        gz = Gazetteer(
+            overrides={"CHARING CROSS STATION": [51.500, -0.100]},
+            osm_pois=self.harvest,
+            alias_index=self.alias_index,
+        )
+        hit = gz.lookup_coords("CHARING CROSS STATION WC2")
+        self.assertEqual(hit["_source"], "override")
+        self.assertAlmostEqual(hit["lat"], 51.500)
+
+
+class HarvestCoverageTests(unittest.TestCase):
+    def test_tag_groups_cover_the_endpoint_categories_we_need(self):
+        from knowledge_run_generator.osm_pois import _TAG_GROUPS
+
+        values = " ".join(v for _k, v, _kind in _TAG_GROUPS)
+        for tag in ("station", "halt", "bus_station", "prison", "marketplace",
+                    "hospital", "stadium", "place_of_worship", "museum"):
+            with self.subTest(tag=tag):
+                self.assertIn(tag, values)
+
+    def test_stations_are_kinded_as_stations(self):
+        from knowledge_run_generator.osm_pois import _kind_for
+
+        self.assertEqual(_kind_for({"railway": "halt"}), "station")
+        self.assertEqual(_kind_for({"amenity": "bus_station"}), "station")
+
+
 class LoaderTests(unittest.TestCase):
     def test_load_knowledge_pois_skips_failed_geocodes(self):
         with tempfile.TemporaryDirectory() as tmp:

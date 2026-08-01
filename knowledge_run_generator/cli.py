@@ -307,9 +307,9 @@ def diagnose(run_id, runs, direction, full, context):
 # ---------------------------------------------------------------------------
 
 @cli.command("osm-pois")
-@click.option("--cache", type=click.Path(dir_okay=False),
-              default="/tmp/app_cache/osm_pois.json",
-              help="Cache path for the harvested POI dict.")
+@click.option("--cache", type=click.Path(dir_okay=False), default=None,
+              help="Where to write the harvested POI dict "
+                   "(default: constants/osm_pois.json).")
 @click.option("--force", is_flag=True,
               help="Ignore the cache and re-query Overpass.")
 @click.option("--bbox", nargs=4, type=float, default=None,
@@ -320,6 +320,9 @@ def osm_pois(cache, force, bbox):
         LONDON_BBOX, fetch_pois, kind_counts,
     )
 
+    _repo, _scripts, constants = _repo_paths()
+    cache = cache or str(constants / "osm_pois.json")
+    Path(cache).parent.mkdir(parents=True, exist_ok=True)
     target_bbox = tuple(bbox) if bbox else LONDON_BBOX
     click.echo(
         f"Harvesting OSM POIs (bbox={target_bbox}, force={force}, cache={cache}) ..."
@@ -635,7 +638,7 @@ def generate_all(out_dir, pdf, token, env_file, skip_pois, skip_osm, resume, no_
 
     if not skip_osm:
         click.echo(f"\n{'='*60}\nOSM gazetteer harvest\n{'='*60}")
-        fetch_pois(bbox=LONDON_BBOX, cache_path=Path("/tmp/app_cache/osm_pois.json"))
+        fetch_pois(bbox=LONDON_BBOX, cache_path=constants / "osm_pois.json")
     else:
         click.echo("Skipping OSM harvest (--skip-osm).")
 

@@ -196,9 +196,9 @@ tiers in order and only falls back to the network geocoder if all four miss:
 | Tier | Source | Covers (of 640 endpoints) |
 |------|--------|---------------------------|
 | 1 | `poi_overrides.json` — curated corrections | 74 |
-| 2 | `constants/knowledge_pois.json` — the geocoded Points List | 426 |
-| 3 | `constants/`-cached OSM harvest (`krg osm-pois`) | most of the remaining stations |
-| 4 | the alias index — endpoints that name a street | 88 |
+| 2 | `constants/knowledge_pois.json` — the geocoded Points List | 432 |
+| 3 | `constants/osm_pois.json` — the OSM harvest (`krg osm-pois`) | 31 (stations, prisons, markets, hospitals) |
+| 4 | the alias index — endpoints that name a street | ~91 |
 
 Names are matched verbatim, then without the postcode suffix, then
 canonically normalised (so `FITZHARDINGE ST W1` finds *Fitzhardinge Street*).
@@ -206,11 +206,24 @@ Where several points share a name, the endpoint's postcode district picks the
 right one; for streets, the district's centre of mass picks between same-named
 streets across London.
 
-**Build POIs before runs.** `krg generate all` already does this. Running
-`krg generate runs` against an empty `constants/` still works, but every
-unmatched endpoint costs a rate-limited Nominatim round trip and fails
-preflight. Point the pipeline at an existing Points List with
-`KRG_KNOWLEDGE_POIS=/path/to/knowledge_pois.json` if it lives elsewhere.
+Stations get their own matching pass, because OSM and the Blue Book name them
+differently: OSM tags *Charing Cross*, *London Waterloo*, *Bow Church*, while
+the Blue Book writes `CHARING CROSS STATION WC2` and even
+`BETHNAL GREEN B_R STATION E2`. Both sides are reduced to a bare stem —
+station/operator words dropped, a leading `LONDON` optional — and that index is
+consulted **only** for station-shaped queries, so `FINSBURY PARK N4` and
+`FINSBURY PARK STATION N4` don't collapse into the same answer.
+
+That leaves roughly a dozen endpoints for the geocoder, all name variants worth
+adding to `poi_overrides.json` (`HOLLOWAY PRISON` vs OSM's *HM Prison
+Holloway*, `THE NEW DEN` vs *The Den*).
+
+**Build POIs and harvest OSM before runs.** `krg generate all` already does
+both, writing `constants/knowledge_pois.json` and `constants/osm_pois.json`.
+Running `krg generate runs` against an empty `constants/` still works, but
+every unmatched endpoint costs a rate-limited Nominatim round trip and fails
+preflight. Point the pipeline at existing data with `KRG_KNOWLEDGE_POIS` /
+`KRG_OSM_POIS` if it lives elsewhere.
 
 ### Source data
 
