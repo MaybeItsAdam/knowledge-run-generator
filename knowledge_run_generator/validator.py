@@ -362,23 +362,10 @@ def check_directness(G, route_nodes, origin_node, dest_node,
 # Street Coverage Check
 # ---------------------------------------------------------------------------
 
-_ABBREVIATIONS = {
-    " ST": " STREET", " RD": " ROAD", " AVE": " AVENUE",
-    " SQ": " SQUARE", " PL": " PLACE", " LN": " LANE",
-    " GDNS": " GARDENS", " PK": " PARK", " CIR": " CIRCUS",
-    " HL": " HILL", " RI": " RISE", " CR": " CRESCENT",
-}
-
-
-def _normalise_street(name):
-    """Upper-case, strip punctuation, expand common abbreviations."""
-    if not name:
-        return ""
-    n = str(name).upper().strip().replace("'", "").replace(".", "").replace("'", "")
-    for abbr, full in _ABBREVIATIONS.items():
-        if n.endswith(abbr):
-            n = n[: -len(abbr)] + full
-    return n
+# Street-name canonicalisation is shared with the alias index, the street
+# index and the corrector, so the coverage check can't disagree with routing
+# about whether a street was traversed.
+from .aliases import normalise as _normalise_street
 
 
 def _extract_route_streets(G, route_nodes):

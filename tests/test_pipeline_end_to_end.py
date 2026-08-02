@@ -102,6 +102,17 @@ class PipelineEndToEndTests(unittest.TestCase):
             with self.subTest(street=street):
                 self.assertIn(street, named)
 
+    def test_step_distances_sum_to_the_route_distance(self):
+        # The call and the metadata must agree; they used to pick different
+        # edges out of a parallel bundle.
+        runs, _qa = self._run()
+        route = runs[0]["route"]
+        self.assertAlmostEqual(
+            sum(s.get("distance", 0) for s in route["steps"]),
+            route["distance"],
+            delta=1.0,
+        )
+
     # -- the QA record --------------------------------------------------
 
     def test_qa_record_reports_a_usable_run(self):
@@ -111,6 +122,14 @@ class PipelineEndToEndTests(unittest.TestCase):
         self.assertEqual(record["shape_problems"], [])
         self.assertTrue(record["preflight_ok"])
         self.assertTrue(record["passed"])
+
+    def test_qa_reports_router_search_failures_and_provenance(self):
+        _runs, qa = self._run()
+        self.assertEqual(qa["1"]["unreachable_legs"], 0)
+        self.assertEqual(qa["1"]["truncated_legs"], 0)
+        provenance = qa["_provenance"]
+        self.assertEqual(provenance["graph_nodes"], self.graph.number_of_nodes())
+        self.assertEqual(provenance["network_type"], "drive")
 
     def test_unresolvable_endpoint_is_recorded_not_dropped(self):
         # Strip the Points List: the origin can no longer resolve, and the run

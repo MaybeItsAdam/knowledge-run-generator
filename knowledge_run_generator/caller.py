@@ -1,6 +1,18 @@
 import networkx as nx
 import math
 
+from .router import _best_edge_data
+
+
+def _edge(G, u, v):
+    """The shortest parallel edge between u and v.
+
+    Key 0 is not always the shortest of a parallel bundle; picking it made the
+    step distances disagree with the route total reported by
+    ``_extract_route_metadata``, which uses the shortest.
+    """
+    return _best_edge_data(G.get_edge_data(u, v)) or {}
+
 def calculate_bearing(lat1, lon1, lat2, lon2):
     """
     Calculate the bearing between two points.
@@ -55,7 +67,7 @@ def generate_call(G, route_nodes, landmarks_gdf=None):
 
     # 1. Start Step
     u, v = route_nodes[0], route_nodes[1]
-    edge_data = G.get_edge_data(u, v)[0]
+    edge_data = _edge(G, u, v)
     current_street = edge_data.get('name', 'Unknown Road')
     if isinstance(current_street, list): 
         current_street = current_street[0]
@@ -76,8 +88,8 @@ def generate_call(G, route_nodes, landmarks_gdf=None):
         v = route_nodes[i+1]
         
         # Helper to get edge data safely
-        curr_edge = G.get_edge_data(route_nodes[i-1], u)[0]
-        next_edge = G.get_edge_data(u, v)[0]
+        curr_edge = _edge(G, route_nodes[i-1], u)
+        next_edge = _edge(G, u, v)
         
         curr_name = curr_edge.get('name', 'Unknown Road')
         next_name = next_edge.get('name', 'Unknown Road')

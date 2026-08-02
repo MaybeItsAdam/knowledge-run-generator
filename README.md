@@ -188,6 +188,23 @@ curl "http://127.0.0.1:7481/api/locations/search?q=waterloo&limit=6"
 3. **Route**: feeds both into `geocode_and_snap` and `get_constrained_route`.
 4. **Validate**: writes `qa_report.json` next to the output, summarising preflight, directness, legality, and street-coverage per run.
 
+### What the QA report records
+
+`qa_report.json` has one entry per run id — always all 320, including runs that
+failed before producing anything — plus two summary keys:
+
+- `status` / `failure_reason`: `ok`, or why the run isn't usable (geocode
+  failure, preflight failure, no route, an exception, or never processed).
+- `shape_problems`: structural defects found by `check_run_shape` — geometry
+  too short, not reaching the stated endpoints, a distance shorter than the
+  straight line, missing steps. `krg generate all` gates on these, so an
+  *unusable* data set fails the same way an *incomplete* one does.
+- `unreachable_legs` / `truncated_legs`: legs the router abandoned (no path, or
+  the search-state cap). Non-zero means the geometry has a gap.
+- `_completeness`: `missing_ids` and `unusable_ids`.
+- `_provenance`: the graph size, network type, index sizes and timestamp behind
+  this build, so a change in the routes can be attributed rather than guessed at.
+
 ### How run endpoints resolve
 
 Each run's origin and destination go through the `Gazetteer`, which tries four
@@ -195,7 +212,7 @@ tiers in order and only falls back to the network geocoder if all four miss:
 
 | Tier | Source | Covers (of 640 endpoints) |
 |------|--------|---------------------------|
-| 1 | `poi_overrides.json` — curated corrections | 74 |
+| 1 | `poi_overrides.json` — curated corrections and name aliases | 74 |
 | 2 | `constants/knowledge_pois.json` — the geocoded Points List | 432 |
 | 3 | `constants/osm_pois.json` — the OSM harvest (`krg osm-pois`) | 31 (stations, prisons, markets, hospitals) |
 | 4 | the alias index — endpoints that name a street | ~91 |
@@ -214,9 +231,16 @@ station/operator words dropped, a leading `LONDON` optional — and that index i
 consulted **only** for station-shaped queries, so `FINSBURY PARK N4` and
 `FINSBURY PARK STATION N4` don't collapse into the same answer.
 
-That leaves roughly a dozen endpoints for the geocoder, all name variants worth
-adding to `poi_overrides.json` (`HOLLOWAY PRISON` vs OSM's *HM Prison
-Holloway*, `THE NEW DEN` vs *The Den*).
+Where a Blue Book name simply differs from the name in every data source, an
+override value can be that other **name** rather than a position:
+
+```json
+{ "HOLLOWAY PRISON": "HM Prison Holloway" }
+```
+
+Resolution continues through the remaining tiers under the aliased name, so
+there's no coordinate to maintain, and an alias pointing at something unknown
+just falls through to the geocoder as before. Aliases may point at streets too.
 
 **Build POIs and harvest OSM before runs.** `krg generate all` already does
 both, writing `constants/knowledge_pois.json` and `constants/osm_pois.json`.

@@ -9,6 +9,8 @@ import math
 import networkx as nx
 import osmnx as ox
 
+from .aliases import normalise as _normalise_street
+
 
 MAX_CORRECTION_ATTEMPTS = 3
 
@@ -105,8 +107,9 @@ def fix_street_coverage(G, route_nodes, coverage_metrics, street_to_nodes,
 
     waypoints_with_proj = []
     for street in missing:
-        norm = street.upper().replace("'", "").replace(".", "")
-        nodes = street_to_nodes.get(norm, set())
+        # Must match how build_street_index keyed the index, or every
+        # coverage fix silently finds no nodes.
+        nodes = street_to_nodes.get(_normalise_street(street), set())
         if not nodes:
             continue
 

@@ -31,7 +31,9 @@ from knowledge_run_generator.validator import (
 )
 from knowledge_run_generator.corrector import correct_and_validate
 from knowledge_run_generator.geojson_export import route_to_geojson_feature, export_all_runs_geojson
-from knowledge_run_generator.aliases import load_or_build_alias_index
+from knowledge_run_generator.aliases import (
+    load_or_build_alias_index, normalise as _canonical_normalise,
+)
 from knowledge_run_generator.gazetteer import (
     DEFAULT_KNOWLEDGE_POIS_PATH, Gazetteer, load_knowledge_pois, preflight_run,
 )
@@ -157,10 +159,11 @@ def build_street_index(G, cache_dir):
     return street_to_nodes
 
 
-def _normalise(name):
-    if not name:
-        return ""
-    return str(name).upper().strip().replace("'", "").replace(".", "")
+# The street index, the alias index, the validator's coverage check and the
+# corrector all key on street names; they used to do it four slightly
+# different ways, so a name could be present in one and missing from another.
+# aliases.normalise is the single canonical form.
+_normalise = _canonical_normalise
 
 
 # ---------------------------------------------------------------------------
@@ -852,6 +855,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 "is_direct": validation.is_direct,
                 "street_coverage": validation.coverage_metrics.get("coverage"),
                 "corrections": len(corrections),
+                # Legs the router abandoned. Non-zero means the geometry has a
+                # gap even though a route was produced.
+                "unreachable_legs": fwd_meta.get("unreachable_legs", 0),
+                "truncated_legs": fwd_meta.get("truncated_legs", 0),
                 "fwd_distance_m": fwd_distance,
                 "rev_distance_m": rev_distance,
                 # Preflight signal
@@ -899,6 +906,19 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     # ------------------------------------------------------------------
     _save_runs(output_file, runs_data)
     print(f"\nSaved {len(runs_data)} runs to {output_file}")
+
+    # Provenance: which graph produced this, so a change in the routes can be
+    # attributed rather than guessed at.
+    qa_results["_provenance"] = {
+        "generated_at": int(time.time()),
+        "network_type": network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive"),
+        "graph_nodes": G.number_of_nodes(),
+        "graph_edges": G.number_of_edges(),
+        "street_names_indexed": len(street_to_nodes),
+        "prohibited_turns": len(prohibited_turns),
+        "knowledge_pois": len(knowledge_pois),
+        "osm_pois": len(osm_pois or {}),
+    }
 
     # QA report
     with open(qa_path, "w") as f:

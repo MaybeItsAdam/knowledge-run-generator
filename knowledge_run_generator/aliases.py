@@ -180,7 +180,10 @@ def build_alias_index(G) -> AliasIndex:
 
 # Bump when the normaliser or the index layout changes, so caches built by an
 # older version are rebuilt instead of silently answering with stale data.
-INDEX_FORMAT_VERSION = 1
+#   1 -> initial fingerprinted format
+#   2 -> street index and coverage check moved onto this normaliser, so every
+#        cached index built before it keys on the old, unexpanded forms
+INDEX_FORMAT_VERSION = 2
 
 
 def graph_fingerprint(G) -> tuple:
