@@ -45,14 +45,22 @@ _OVERPASS_HEADERS = {
 # snap hints (e.g. a station should prefer its on-street approach).
 _TAG_GROUPS: tuple[tuple[str, str, str], ...] = (
     ("amenity", "pub|restaurant|cafe|theatre|cinema|hospital|police|"
-                "library|townhall|place_of_worship|bank|university|college",
+                "library|townhall|place_of_worship|bank|university|college|"
+                "school|prison|courthouse|fire_station|marketplace|"
+                "arts_centre|conference_centre|embassy",
      "amenity"),
-    ("tourism", "hotel|museum|attraction|gallery|hostel", "tourism"),
-    ("railway", "station", "station"),
+    ("tourism", "hotel|museum|attraction|gallery|hostel|zoo", "tourism"),
+    # Stations are the single biggest category of Blue Book run endpoints that
+    # isn't in the Points List. `halt` catches the smaller National Rail stops,
+    # and bus_station catches coach stations (e.g. Victoria Coach Station).
+    ("railway", "station|halt", "station"),
     ("public_transport", "station", "station"),
+    ("amenity", "bus_station", "station"),
+    ("aeroway", "terminal", "station"),
     ("leisure", "stadium|sports_centre|park", "leisure"),
     ("historic", "memorial|monument|castle", "historic"),
     ("shop", "department_store|mall", "shop"),
+    ("office", "diplomatic", "office"),
 )
 
 
@@ -157,12 +165,21 @@ def _element_latlon(el: dict) -> tuple[float, float] | None:
     return None
 
 
-def parse_overpass(payload: dict) -> dict[str, dict]:
-    """Turn raw Overpass JSON into ``{NAME_UPPER: {lat, lon, kind, osm_id, on_street?}}``.
+# How many same-named alternates to keep per name. London has a handful of
+# genuinely repeated names; beyond a few the extras are noise.
+MAX_ALTERNATES = 4
 
-    Duplicates on name are dropped — the first occurrence wins. The query
-    is bbox-ordered, so the effective tiebreaker is essentially OSM id,
-    which is stable across Overpass runs.
+
+def parse_overpass(payload: dict) -> dict[str, dict]:
+    """Turn raw Overpass JSON into ``{NAME_UPPER: {lat, lon, kind, osm_id, ...}}``.
+
+    Same-named places are common and meaningfully different: *Finsbury Park*
+    is a station, a park and an area. Dropping all but the first silently
+    decided which one every future lookup would get. The first occurrence is
+    still the primary record — the query is bbox-ordered, so that's stable
+    across runs — but the alternates ride along under ``_others`` so a caller
+    can pick by kind. The shape stays ``name -> record``, so existing caches
+    and consumers keep working.
     """
     out: dict[str, dict] = {}
     for el in payload.get("elements", []):
@@ -173,8 +190,6 @@ def parse_overpass(payload: dict) -> dict[str, dict]:
         latlon = _element_latlon(el)
         if latlon is None or latlon[0] is None or latlon[1] is None:
             continue
-        if name in out:
-            continue
         entry = {
             "lat": float(latlon[0]),
             "lon": float(latlon[1]),
@@ -184,7 +199,20 @@ def parse_overpass(payload: dict) -> dict[str, dict]:
         addr_street = tags.get("addr:street")
         if addr_street:
             entry["on_street"] = addr_street
-        out[name] = entry
+
+        primary = out.get(name)
+        if primary is None:
+            out[name] = entry
+            continue
+        # Only keep an alternate that says something new about the place; a
+        # second pub of the same name tells a lookup nothing the first didn't.
+        others = primary.get("_others") or []
+        if entry["kind"] == primary["kind"]:
+            continue
+        if len(others) < MAX_ALTERNATES and not any(
+            o["kind"] == entry["kind"] for o in others
+        ):
+            primary.setdefault("_others", others).append(entry)
     return out
 
 
@@ -264,6 +292,33 @@ def fetch_pois(
         }, indent=2, sort_keys=True))
 
     return all_pois
+
+
+def load_cached_pois(*candidates: Path | str | None) -> dict[str, dict]:
+    """Return the POI dict from the first readable harvest cache.
+
+    The default cache lives in ``/tmp``, which is wiped on reboot — and when it
+    vanishes the gazetteer's OSM tier silently disappears with it, taking the
+    station endpoints down to the geocoder. Callers pass the places a harvest
+    might reasonably live (env var, output dir, ``constants/``, the /tmp cache)
+    and take whichever exists.
+    """
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if not path.exists():
+            continue
+        try:
+            blob = json.loads(path.read_text())
+        except Exception as exc:  # noqa: BLE001 - report and try the next one
+            print(f"  Warning: could not load {path}: {exc}")
+            continue
+        pois = blob.get("pois") if isinstance(blob, dict) else None
+        if pois:
+            print(f"  {len(pois)} OSM POIs from {path}.")
+            return pois
+    return {}
 
 
 def merge_with_overrides(overrides: dict, osm_pois: dict) -> dict:

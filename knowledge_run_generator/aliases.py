@@ -178,18 +178,44 @@ def build_alias_index(G) -> AliasIndex:
     )
 
 
+# Bump when the normaliser or the index layout changes, so caches built by an
+# older version are rebuilt instead of silently answering with stale data.
+#   1 -> initial fingerprinted format
+#   2 -> street index and coverage check moved onto this normaliser, so every
+#        cached index built before it keys on the old, unexpanded forms
+INDEX_FORMAT_VERSION = 2
+
+
+def graph_fingerprint(G) -> tuple:
+    """Cheap identity for a graph, used to invalidate derived index caches.
+
+    Size alone won't catch every edit, but it catches the ones that matter in
+    practice — a different place, a different ``network_type``, or a refreshed
+    OSM extract — and costs nothing to compute.
+    """
+    return (INDEX_FORMAT_VERSION, G.number_of_nodes(), G.number_of_edges())
+
+
 def load_or_build_alias_index(G, cache_path: Path) -> AliasIndex:
-    """Pickle-cached wrapper for :func:`build_alias_index`."""
+    """Pickle-cached wrapper for :func:`build_alias_index`.
+
+    The cache is keyed by :func:`graph_fingerprint`; a mismatch (or a cache
+    written before the key existed) rebuilds rather than returning an index
+    that disagrees with the graph it's being used against.
+    """
     cache_path = Path(cache_path)
+    fingerprint = graph_fingerprint(G)
     if cache_path.exists():
         try:
             with open(cache_path, "rb") as f:
-                return pickle.load(f)
+                blob = pickle.load(f)
+            if isinstance(blob, dict) and blob.get("fingerprint") == fingerprint:
+                return blob["index"]
         except Exception:
             pass
 
     index = build_alias_index(G)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     with open(cache_path, "wb") as f:
-        pickle.dump(index, f)
+        pickle.dump({"fingerprint": fingerprint, "index": index}, f)
     return index

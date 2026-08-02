@@ -24,7 +24,7 @@ from typing import Any
 
 from .aliases import AliasIndex, load_or_build_alias_index
 from .caller import generate_call
-from .gazetteer import Gazetteer, preflight_run
+from .gazetteer import Gazetteer, load_knowledge_pois, preflight_run
 from .geocoder import geocode_and_snap
 from .router import (
     _extract_route_metadata,
@@ -90,6 +90,10 @@ class Session:
     cache_dir
         Where to keep derived indexes (alias pickle, etc.). Defaults to
         ``/tmp/app_cache``.
+    knowledge_pois_file
+        Geocoded Knowledge Points List to resolve place names against.
+        Defaults to the generator's ``constants/knowledge_pois.json`` if it
+        has been built; absent, name resolution falls back to the geocoder.
     """
 
     def __init__(
@@ -99,6 +103,7 @@ class Session:
         cache_dir: str | Path = "/tmp/app_cache",
         build_indexes: bool = True,
         use_osm_pois: bool = True,
+        knowledge_pois_file: str | Path | None = None,
     ):
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
@@ -107,6 +112,7 @@ class Session:
         self._gazetteer: Gazetteer | None = None
         self._poi_overrides = self._load_overrides(poi_overrides)
         self._use_osm_pois = use_osm_pois
+        self._knowledge_pois_path = knowledge_pois_file
 
         if build_indexes and graph is not None:
             # Build eagerly if caller supplied a graph
@@ -143,6 +149,7 @@ class Session:
                 overrides=self._poi_overrides,
                 alias_index=self._alias_index,
                 osm_pois=osm_pois,
+                knowledge_pois=load_knowledge_pois(self._knowledge_pois_path),
             )
 
     def _load_osm_pois(self) -> dict | None:
@@ -152,14 +159,15 @@ class Session:
         a cold Session() into a 3-minute network call. Use
         ``krg osm-pois`` explicitly to refresh.
         """
-        cache = self._cache_dir / "osm_pois.json"
-        if not cache.exists():
-            return None
-        try:
-            blob = json.loads(cache.read_text())
-            return blob.get("pois") or {}
-        except Exception:
-            return None
+        import os
+
+        from .osm_pois import load_cached_pois
+
+        return load_cached_pois(
+            os.environ.get("KRG_OSM_POIS"),
+            Path(__file__).resolve().parent.parent / "constants" / "osm_pois.json",
+            self._cache_dir / "osm_pois.json",
+        ) or None
 
     @staticmethod
     def _load_overrides(src) -> dict:

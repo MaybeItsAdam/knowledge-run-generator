@@ -27,12 +27,17 @@ from knowledge_run_generator.router import (
     nodes_to_coords_geometry, _extract_route_metadata,
 )
 from knowledge_run_generator.validator import (
-    load_turn_restrictions, validate_route, ValidationResult,
+    check_run_shape, load_turn_restrictions, validate_route, ValidationResult,
 )
 from knowledge_run_generator.corrector import correct_and_validate
 from knowledge_run_generator.geojson_export import route_to_geojson_feature, export_all_runs_geojson
-from knowledge_run_generator.aliases import load_or_build_alias_index
-from knowledge_run_generator.gazetteer import Gazetteer, preflight_run
+from knowledge_run_generator.aliases import (
+    load_or_build_alias_index, normalise as _canonical_normalise,
+)
+from knowledge_run_generator.gazetteer import (
+    DEFAULT_KNOWLEDGE_POIS_PATH, Gazetteer, load_knowledge_pois, preflight_run,
+)
+from knowledge_run_generator.osm_pois import load_cached_pois
 from knowledge_run_generator import caller
 
 
@@ -48,6 +53,17 @@ def _json_default(o):
     if hasattr(o, "item"):
         return o.item()
     raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
+def _save_runs(output_file, runs_data):
+    """Write ``runs_data`` to *output_file*, ordered by run id.
+
+    Regenerated runs are appended to the end of the in-memory list, so without
+    an explicit sort the file's order drifts from 1..320 after a resume.
+    """
+    ordered = sorted(runs_data, key=lambda r: r.get("id", 0))
+    with open(output_file, "w") as f:
+        json.dump(ordered, f, indent=2, default=_json_default)
 
 
 # ---------------------------------------------------------------------------
@@ -103,14 +119,26 @@ def parse_intermediary_file(path):
 # ---------------------------------------------------------------------------
 
 def build_street_index(G, cache_dir):
-    """Build or load a street-name → node-set index from the graph."""
+    """Build or load a street-name → node-set index from the graph.
+
+    Keyed by the graph's fingerprint so an index built against a different
+    graph (or by an older normaliser) is rebuilt rather than reused.
+    """
     import pickle
+    from knowledge_run_generator.aliases import graph_fingerprint
+
     index_path = cache_dir / "street_index.pkl"
+    fingerprint = graph_fingerprint(G)
 
     if index_path.exists():
-        print("Loading street index from cache...")
-        with open(index_path, "rb") as f:
-            return pickle.load(f)
+        try:
+            with open(index_path, "rb") as f:
+                blob = pickle.load(f)
+            if isinstance(blob, dict) and blob.get("fingerprint") == fingerprint:
+                print("Loading street index from cache...")
+                return blob["index"]
+        except Exception as exc:
+            print(f"  Ignoring unreadable street index cache: {exc}")
 
     print("Building street index...")
     street_to_nodes = {}
@@ -126,15 +154,16 @@ def build_street_index(G, cache_dir):
             street_to_nodes[norm].add(v)
 
     with open(index_path, "wb") as f:
-        pickle.dump(street_to_nodes, f)
+        pickle.dump({"fingerprint": fingerprint, "index": street_to_nodes}, f)
 
     return street_to_nodes
 
 
-def _normalise(name):
-    if not name:
-        return ""
-    return str(name).upper().strip().replace("'", "").replace(".", "")
+# The street index, the alias index, the validator's coverage check and the
+# corrector all key on street names; they used to do it four slightly
+# different ways, so a name could be present in one and missing from another.
+# aliases.normalise is the single canonical form.
+_normalise = _canonical_normalise
 
 
 # ---------------------------------------------------------------------------
@@ -392,13 +421,19 @@ def _remove_backtracks(G, waypoint_nodes, start_coords, end_coords):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def process_runs(output_file, limit=None, export_geojson=False, network_type="drive",
-                 select_ids=None):
+def process_runs(output_file, limit=None, export_geojson=False, network_type=None,
+                 select_ids=None, cache_dir=None):
     """Process Blue Book runs into ``output_file``.
 
     ``select_ids`` (an iterable of run ids) restricts processing to those runs;
     when given, the completeness gate is skipped because the output is an
-    intentional subset. ``limit`` still caps the *first N* runs for quick demos.
+    intentional subset. Explicitly selected runs are *regenerated* even if they
+    already exist in ``output_file`` — asking for a specific run is a request
+    to redo it, and ``--fresh`` is deliberately unavailable for subsets.
+    ``limit`` still caps the *first N* runs for quick demos.
+
+    ``network_type`` of ``None`` defers to ``load_graph``, which honours
+    ``KRG_GRAPH_NETWORK_TYPE``.
     """
     select_ids = set(select_ids) if select_ids is not None else None
     runs_data = []
@@ -418,6 +453,29 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         except json.JSONDecodeError:
             print("Could not decode existing JSON, starting fresh.")
 
+    # Carry forward the QA records of runs we're not reprocessing. Without
+    # this, a resume (or a single-run regeneration) rewrites qa_report.json
+    # with only the runs touched *this* invocation, silently discarding the
+    # QA record for every run already in runPoints.json.
+    qa_path = output_file.parent / "qa_report.json"
+    if qa_path.exists():
+        try:
+            existing_qa = json.loads(qa_path.read_text())
+            if isinstance(existing_qa, dict):
+                qa_results.update(existing_qa)
+                print(f"Loaded {len(existing_qa)} existing QA records from {qa_path}")
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"Warning: could not read existing QA report: {exc}")
+
+    # Drop the selected runs from the resume set so they are rebuilt rather
+    # than skipped as "already processed".
+    if select_ids:
+        stale = processed_ids & select_ids
+        if stale:
+            runs_data = [r for r in runs_data if r["id"] not in select_ids]
+            processed_ids -= select_ids
+            print(f"Regenerating {len(stale)} already-present run(s): {sorted(stale)}")
+
     # Parse Blue Book directions (using local files in demo directory)
     inter_file = DEMO_DIR / "blue_book_runs_intermediary.txt"
     if not inter_file.exists():
@@ -431,9 +489,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
     print("Loading graph...")
     G = load_graph(network_type=network_type)
 
-    # Street index
-    cache_dir = Path("/tmp/app_cache")
-    cache_dir.mkdir(exist_ok=True)
+    # Street index. cache_dir is a parameter so tests (and parallel builds)
+    # can keep their derived indexes out of the shared /tmp location.
+    cache_dir = Path(cache_dir) if cache_dir else Path("/tmp/app_cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
     street_to_nodes = build_street_index(G, cache_dir)
     print(f"Indexed {len(street_to_nodes)} street names.")
 
@@ -465,21 +524,41 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
     # Optional OSM POI harvest (Quick Win 8): if the cache exists we fold it
     # into the gazetteer as a second-chance lookup behind the curated
     # overrides. Populate it with `krg osm-pois`; we never auto-fetch here.
-    osm_poi_cache = cache_dir / "osm_pois.json"
-    osm_pois = None
-    if osm_poi_cache.exists():
-        try:
-            blob = json.loads(osm_poi_cache.read_text())
-            osm_pois = blob.get("pois") or {}
-            print(f"  {len(osm_pois)} OSM POIs from {osm_poi_cache}.")
-        except Exception as exc:
-            print(f"  Warning: could not load {osm_poi_cache}: {exc}")
-            osm_pois = None
+    osm_pois = load_cached_pois(
+        os.environ.get("KRG_OSM_POIS"),
+        output_file.parent / "osm_pois.json",
+        PROJECT_ROOT / "constants" / "osm_pois.json",
+        cache_dir / "osm_pois.json",
+    )
+    if not osm_pois:
+        print("  No OSM POI harvest found — run `krg osm-pois` so station "
+              "endpoints resolve without the geocoder.")
+
+    # Geocoded Knowledge Points List (from `krg generate pois`). Most Blue Book
+    # run endpoints are Points List entries, so this is what keeps the pipeline
+    # off Nominatim — without it every unmatched endpoint costs a rate-limited
+    # network round trip and fails preflight.
+    knowledge_pois = {}
+    for candidate in (
+        os.environ.get("KRG_KNOWLEDGE_POIS"),
+        output_file.parent / "knowledge_pois.json",
+        DEFAULT_KNOWLEDGE_POIS_PATH,
+    ):
+        if not candidate:
+            continue
+        knowledge_pois = load_knowledge_pois(candidate)
+        if knowledge_pois:
+            print(f"Loaded {len(knowledge_pois)} geocoded Knowledge Points from {candidate}.")
+            break
+    if not knowledge_pois:
+        print("  No knowledge_pois.json found — endpoints will fall back to the "
+              "geocoder. Run `krg generate pois` first for a faster, offline resolve.")
 
     gazetteer = Gazetteer(
         overrides=poi_overrides,
         alias_index=alias_index,
         osm_pois=osm_pois,
+        knowledge_pois=knowledge_pois,
     )
 
     # Run-specific patches from local demo directory.
@@ -517,7 +596,9 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
 
         if not start or not end:
             print(f"  SKIP: Failed to geocode Run {run_id}")
-            qa_results[run_id] = {
+            qa_results[str(run_id)] = {
+                "status": "failed",
+                "failure_reason": "geocode failed for start or end",
                 "passed": False,
                 "preflight_ok": False,
                 "preflight_reasons": ["geocode failed for start or end"],
@@ -541,7 +622,9 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
         if not pre.ok:
             for r in pre.reasons:
                 print(f"  [preflight-fail] {r}")
-            qa_results[run_id] = {
+            qa_results[str(run_id)] = {
+                "status": "failed",
+                "failure_reason": "preflight failed",
                 "passed": False,
                 "preflight_ok": False,
                 "preflight_reasons": pre.reasons,
@@ -616,11 +699,17 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
                     exempted_turns.add((f, v, t))
                 except Exception as exc:
                     print(f"  [Patch] Could not resolve exempt_turns triple: {exc}")
+            # The exemption has to reach the *router* too: validating a turn as
+            # excused is pointless if the Dijkstra expansion still refuses to
+            # traverse it, so route against the restriction set minus the
+            # exempted triples.
+            run_prohibited_turns = prohibited_turns
             if exempted_turns:
                 print(f"  [Patch] {len(exempted_turns)} turns exempted")
+                run_prohibited_turns = set(prohibited_turns) - exempted_turns
 
             def _route_fn(G, o, d, wps):
-                return get_constrained_route(G, o, d, wps, prohibited_turns=prohibited_turns, intermediate_streets=intermediate_streets)
+                return get_constrained_route(G, o, d, wps, prohibited_turns=run_prohibited_turns, intermediate_streets=intermediate_streets)
 
             def _validate_fn(G, nodes, o, d, turns, streets, cfg, wps, exempted_turns=None):
                 return validate_route(
@@ -630,7 +719,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
 
             route_nodes, validation, corrections = correct_and_validate(
                 G, start_node, end_node, waypoint_nodes,
-                intermediate_streets, prohibited_turns, street_to_nodes,
+                intermediate_streets, run_prohibited_turns, street_to_nodes,
                 route_fn=_route_fn,
                 validate_fn=_validate_fn,
                 config=run_config,
@@ -639,6 +728,12 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
 
             if not route_nodes or len(route_nodes) < 2:
                 print(f"  ERROR: No route produced for Run {run_id}")
+                qa_results[str(run_id)] = {
+                    "status": "failed",
+                    "failure_reason": "no route produced",
+                    "passed": False,
+                    "preflight_ok": pre.ok,
+                }
                 continue
 
             status = "PASS" if validation.passed else "FAIL"
@@ -658,14 +753,15 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             )
 
             def _route_fn_rev(G, o, d, wps):
-                return get_constrained_route(G, o, d, wps, prohibited_turns=prohibited_turns, intermediate_streets=reverse_streets)
+                return get_constrained_route(G, o, d, wps, prohibited_turns=run_prohibited_turns, intermediate_streets=reverse_streets)
 
             rev_route_nodes, rev_validation, rev_corrections = correct_and_validate(
                 G, end_node, start_node, reverse_waypoints,
-                reverse_streets, prohibited_turns, street_to_nodes,
+                reverse_streets, run_prohibited_turns, street_to_nodes,
                 route_fn=_route_fn_rev,
                 validate_fn=_validate_fn,
                 config=run_config,
+                exempted_turns=exempted_turns or None,
             )
 
             if not rev_route_nodes or len(rev_route_nodes) < 2:
@@ -744,7 +840,14 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             processed_ids.add(run_id)
 
             # QA record — expanded so failures can be triaged without re-running
-            qa_results[run_id] = {
+            shape_problems = check_run_shape(run_obj)
+            if shape_problems:
+                print(f"  [shape] {len(shape_problems)} structural problem(s): "
+                      f"{shape_problems[:3]}")
+
+            qa_results[str(run_id)] = {
+                "status": "ok" if not shape_problems else "failed",
+                "shape_problems": shape_problems,
                 "passed": validation.passed,
                 "ratio": metrics.get("ratio"),
                 "max_offset_m": metrics.get("max_lateral_offset_m"),
@@ -752,6 +855,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
                 "is_direct": validation.is_direct,
                 "street_coverage": validation.coverage_metrics.get("coverage"),
                 "corrections": len(corrections),
+                # Legs the router abandoned. Non-zero means the geometry has a
+                # gap even though a route was produced.
+                "unreachable_legs": fwd_meta.get("unreachable_legs", 0),
+                "truncated_legs": fwd_meta.get("truncated_legs", 0),
                 "fwd_distance_m": fwd_distance,
                 "rev_distance_m": rev_distance,
                 # Preflight signal
@@ -779,26 +886,41 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
             # Incremental save
             if len(runs_data) % 5 == 0:
                 print(f"  Saving progress ({len(runs_data)} runs)...")
-                with open(output_file, "w") as f:
-                    json.dump(runs_data, f, indent=2, default=_json_default)
+                _save_runs(output_file, runs_data)
 
         except Exception as e:
             print(f"  ERROR processing Run {run_id}: {e}")
             import traceback
             traceback.print_exc()
+            qa_results[str(run_id)] = {
+                "status": "failed",
+                "failure_reason": f"{type(e).__name__}: {e}",
+                "passed": False,
+                "preflight_ok": pre.ok,
+            }
             continue
 
-        time.sleep(0.5)
 
     # ------------------------------------------------------------------
     # Final save
     # ------------------------------------------------------------------
-    with open(output_file, "w") as f:
-        json.dump(runs_data, f, indent=2, default=_json_default)
+    _save_runs(output_file, runs_data)
     print(f"\nSaved {len(runs_data)} runs to {output_file}")
 
+    # Provenance: which graph produced this, so a change in the routes can be
+    # attributed rather than guessed at.
+    qa_results["_provenance"] = {
+        "generated_at": int(time.time()),
+        "network_type": network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive"),
+        "graph_nodes": G.number_of_nodes(),
+        "graph_edges": G.number_of_edges(),
+        "street_names_indexed": len(street_to_nodes),
+        "prohibited_turns": len(prohibited_turns),
+        "knowledge_pois": len(knowledge_pois),
+        "osm_pois": len(osm_pois or {}),
+    }
+
     # QA report
-    qa_path = output_file.parent / "qa_report.json"
     with open(qa_path, "w") as f:
         json.dump(qa_results, f, indent=2, default=_json_default)
     print(f"QA report saved to {qa_path}")
@@ -819,10 +941,23 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
     present_ids = {r["id"] for r in runs_data}
     missing_ids = sorted(expected_ids - present_ids)
     if limit is None and select_ids is None:
+        # Any expected id with no record at all was dropped before it could
+        # report anything; give it one so the report always covers all 320.
+        for run_id in expected_ids:
+            qa_results.setdefault(str(run_id), {
+                "status": "failed",
+                "failure_reason": "not processed",
+                "passed": False,
+            })
+        unusable = sorted(
+            int(k) for k, v in qa_results.items()
+            if str(k).lstrip("-").isdigit() and v.get("status") == "failed"
+        )
         qa_results["_completeness"] = {
             "expected": len(expected_ids),
             "present": len(present_ids),
             "missing_ids": missing_ids,
+            "unusable_ids": unusable,
         }
         with open(qa_path, "w") as f:
             json.dump(qa_results, f, indent=2, default=_json_default)
@@ -832,10 +967,14 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type="dr
                   f"MISSING {len(missing_ids)}: {missing_ids}")
         else:
             print(f"COMPLETENESS: all {len(expected_ids)} runs present. ✓")
+        if unusable:
+            print(f"USABILITY: {len(unusable)} run(s) present but flagged unusable: "
+                  f"{unusable[:20]}{'...' if len(unusable) > 20 else ''}")
 
-    # Summary with categorised failure reasons. Exclude the non-run
-    # "_completeness" sentinel so the pass/fail tally stays per-run.
-    run_qa = {k: v for k, v in qa_results.items() if isinstance(k, int)}
+    # Summary with categorised failure reasons. Records are keyed by
+    # stringified run id; exclude the non-run "_completeness" sentinel so the
+    # pass/fail tally stays per-run.
+    run_qa = {k: v for k, v in qa_results.items() if str(k).lstrip("-").isdigit()}
     total = len(run_qa)
     passed = sum(1 for v in run_qa.values() if v.get("passed"))
     failed = total - passed

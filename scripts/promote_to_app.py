@@ -14,6 +14,7 @@ Use ``--allow-partial`` to promote anyway (prints what's missing first).
 
 Usage:
     python scripts/promote_to_app.py
+    python scripts/promote_to_app.py --app-dir ../the-blue-app
     python scripts/promote_to_app.py --expected 320 --allow-partial
 """
 
@@ -26,15 +27,18 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APP = ROOT.parent / "the-blue-app"
+DEFAULT_APP = ROOT.parent / "the-blue-app"
 
-# (source in generator) -> (destination in app)
+# (source in generator) -> (destination filename in the app's constants/)
 RUNS_SRC = ROOT / "constants" / "runPoints.json"
-RUNS_DST = APP / "constants" / "runPoints.json"
 QA_SRC = ROOT / "constants" / "qa_report.json"
-QA_DST = APP / "constants" / "qa_report.json"
 POIS_SRC = ROOT / "constants" / "knowledge_pois.json"
-POIS_DST = APP / "constants" / "knowledgePois.json"
+
+DESTINATION_NAMES = {
+    RUNS_SRC: "runPoints.json",
+    QA_SRC: "qa_report.json",
+    POIS_SRC: "knowledgePois.json",
+}
 
 
 def _load_json(path: Path):
@@ -81,7 +85,18 @@ def main() -> int:
     parser.add_argument("--expected", type=int, default=320, help="Expected run count.")
     parser.add_argument("--allow-partial", action="store_true",
                         help="Promote even if runs are incomplete or POIs missing.")
+    parser.add_argument("--app-dir", type=Path, default=DEFAULT_APP,
+                        help="Consumer app checkout to promote into "
+                             f"(default: {DEFAULT_APP}).")
     args = parser.parse_args()
+
+    app = args.app_dir.expanduser().resolve()
+    # Without this check a wrong/missing --app-dir silently *creates* the tree
+    # and writes a dataset nothing reads.
+    if not app.is_dir():
+        print(f"App directory not found: {app}\n"
+              "Pass --app-dir /path/to/the-blue-app.")
+        return 1
 
     print(f"Validating generator outputs in {ROOT / 'constants'} ...")
     runs_ok, _missing = validate_runs(args.expected)
@@ -92,10 +107,9 @@ def main() -> int:
               "Re-run the pipeline(s), or pass --allow-partial to override.")
         return 1
 
-    print(f"\nPromoting into {APP / 'constants'} ...")
-    promote_one(RUNS_SRC, RUNS_DST)
-    promote_one(QA_SRC, QA_DST)
-    promote_one(POIS_SRC, POIS_DST)
+    print(f"\nPromoting into {app / 'constants'} ...")
+    for src, name in DESTINATION_NAMES.items():
+        promote_one(src, app / "constants" / name)
     print("\nDone.")
     return 0
 

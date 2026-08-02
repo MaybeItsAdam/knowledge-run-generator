@@ -21,6 +21,11 @@ SERVICE_HIGHWAYS = {
     "unclassified",
 }
 
+# Cap on states explored per leg. Hitting it means the search space blew up
+# (usually a waypoint the router can't legally reach); the leg is abandoned and
+# counted rather than silently dropped.
+MAX_SEARCH_STATES = 500_000
+
 LINK_HIGHWAYS = {
     "motorway_link",
     "trunk_link",
@@ -156,7 +161,7 @@ def get_constrained_route(G, origin_node, dest_node, waypoint_nodes,
       - total_distance  (metres)
       - streets_traversed  (ordered unique street names)
     """
-    route = _route_through_waypoints(
+    route, search_stats = _route_through_waypoints(
         G, origin_node, dest_node, waypoint_nodes,
         intermediate_streets=intermediate_streets,
         prohibited_turns=prohibited_turns,
@@ -164,13 +169,24 @@ def get_constrained_route(G, origin_node, dest_node, waypoint_nodes,
     clean = _clean_backtrack(route)
     clean = _collapse_revisits(clean)
     metadata = _extract_route_metadata(G, clean)
+    # Legs the search gave up on. Previously both failure modes were silent,
+    # so a route stitched together from partial legs was indistinguishable
+    # from a clean one in the output.
+    metadata.update(search_stats)
     return clean, metadata
 
 
 def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes,
                              intermediate_streets=None,
                              prohibited_turns=None):
-    """Shortest-distance route leg-by-leg through ordered waypoints, with sequential street discounts."""
+    """Shortest-distance route leg-by-leg through ordered waypoints, with
+    sequential street discounts.
+
+    Returns ``(route_nodes, stats)``. ``stats`` reports legs that failed to
+    reach their target: ``unreachable_legs`` (the search exhausted the queue)
+    and ``truncated_legs`` (it hit the state cap first). Both leave a gap in
+    the route, and both used to pass silently.
+    """
     from heapq import heappush, heappop
     import itertools
 
@@ -196,6 +212,8 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes,
     full_route = [origin_node]
     current_source = origin_node
     current_street_idx = 0
+    unreachable_legs = 0
+    truncated_legs = 0
 
     c = itertools.count()
 
@@ -251,12 +269,14 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes,
         found_target = None # (node, idx, prev_node)
         
         states_explored = 0
+        hit_state_cap = False
         while queue:
             priority, dist, _, u, s_idx, prev_u = heappop(queue)
             states_explored += 1
 
-            if states_explored > 500000:
-                # Still fail if we hit a massive search space, but silently
+            if states_explored > MAX_SEARCH_STATES:
+                # Give up on a runaway search, but record it — see stats below.
+                hit_state_cap = True
                 break
 
             if u in target_set:
@@ -386,9 +406,18 @@ def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes,
             current_source = found_target[0]
             current_street_idx = found_target[1]
         else:
-            print(f"  No path for leg {i}: {current_source} -> {target_set}")
+            if hit_state_cap:
+                truncated_legs += 1
+                print(f"  Leg {i} hit the {MAX_SEARCH_STATES}-state search cap: "
+                      f"{current_source} -> {len(target_set)} target node(s)")
+            else:
+                unreachable_legs += 1
+                print(f"  No path for leg {i}: {current_source} -> {target_set}")
 
-    return full_route
+    return full_route, {
+        "unreachable_legs": unreachable_legs,
+        "truncated_legs": truncated_legs,
+    }
 
 
 def _clean_backtrack(route_nodes):

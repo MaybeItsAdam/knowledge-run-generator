@@ -98,6 +98,12 @@ krg route "Manor House Station" "Gibson Square" --geojson out.geojson
 - `--geojson, -g PATH`: save the route as GeoJSON.
 - `--steps / --no-steps`: print turn-by-turn (default: on).
 
+Note: `krg route` / `Session.run` do not fetch OSM turn restrictions (that would
+put a multi-minute Overpass call in front of a single-run command), so their
+output is not legality-checked. Pass a restriction set explicitly via
+`Session.run(..., prohibited_turns=...)`, or use the Blue Book pipeline, which
+loads and enforces them.
+
 The legacy `krg run` command runs the older landmarks-pipeline and supports:
 - `--plot, -p PATH`: save a route visualisation image.
 - `--geojson, -g PATH`: save the route as GeoJSON.
@@ -182,6 +188,67 @@ curl "http://127.0.0.1:7481/api/locations/search?q=waterloo&limit=6"
 3. **Route**: feeds both into `geocode_and_snap` and `get_constrained_route`.
 4. **Validate**: writes `qa_report.json` next to the output, summarising preflight, directness, legality, and street-coverage per run.
 
+### What the QA report records
+
+`qa_report.json` has one entry per run id — always all 320, including runs that
+failed before producing anything — plus two summary keys:
+
+- `status` / `failure_reason`: `ok`, or why the run isn't usable (geocode
+  failure, preflight failure, no route, an exception, or never processed).
+- `shape_problems`: structural defects found by `check_run_shape` — geometry
+  too short, not reaching the stated endpoints, a distance shorter than the
+  straight line, missing steps. `krg generate all` gates on these, so an
+  *unusable* data set fails the same way an *incomplete* one does.
+- `unreachable_legs` / `truncated_legs`: legs the router abandoned (no path, or
+  the search-state cap). Non-zero means the geometry has a gap.
+- `_completeness`: `missing_ids` and `unusable_ids`.
+- `_provenance`: the graph size, network type, index sizes and timestamp behind
+  this build, so a change in the routes can be attributed rather than guessed at.
+
+### How run endpoints resolve
+
+Each run's origin and destination go through the `Gazetteer`, which tries four
+tiers in order and only falls back to the network geocoder if all four miss:
+
+| Tier | Source | Covers (of 640 endpoints) |
+|------|--------|---------------------------|
+| 1 | `poi_overrides.json` — curated corrections and name aliases | 74 |
+| 2 | `constants/knowledge_pois.json` — the geocoded Points List | 432 |
+| 3 | `constants/osm_pois.json` — the OSM harvest (`krg osm-pois`) | 31 (stations, prisons, markets, hospitals) |
+| 4 | the alias index — endpoints that name a street | ~91 |
+
+Names are matched verbatim, then without the postcode suffix, then
+canonically normalised (so `FITZHARDINGE ST W1` finds *Fitzhardinge Street*).
+Where several points share a name, the endpoint's postcode district picks the
+right one; for streets, the district's centre of mass picks between same-named
+streets across London.
+
+Stations get their own matching pass, because OSM and the Blue Book name them
+differently: OSM tags *Charing Cross*, *London Waterloo*, *Bow Church*, while
+the Blue Book writes `CHARING CROSS STATION WC2` and even
+`BETHNAL GREEN B_R STATION E2`. Both sides are reduced to a bare stem —
+station/operator words dropped, a leading `LONDON` optional — and that index is
+consulted **only** for station-shaped queries, so `FINSBURY PARK N4` and
+`FINSBURY PARK STATION N4` don't collapse into the same answer.
+
+Where a Blue Book name simply differs from the name in every data source, an
+override value can be that other **name** rather than a position:
+
+```json
+{ "HOLLOWAY PRISON": "HM Prison Holloway" }
+```
+
+Resolution continues through the remaining tiers under the aliased name, so
+there's no coordinate to maintain, and an alias pointing at something unknown
+just falls through to the geocoder as before. Aliases may point at streets too.
+
+**Build POIs and harvest OSM before runs.** `krg generate all` already does
+both, writing `constants/knowledge_pois.json` and `constants/osm_pois.json`.
+Running `krg generate runs` against an empty `constants/` still works, but
+every unmatched endpoint costs a rate-limited Nominatim round trip and fails
+preflight. Point the pipeline at existing data with `KRG_KNOWLEDGE_POIS` /
+`KRG_OSM_POIS` if it lives elsewhere.
+
 ### Source data
 
 The canonical street-by-street directions for all 320 runs live in two equivalent files:
@@ -199,19 +266,36 @@ seed, all 320 runs — and never reaches into a consumer project. Promotion into
 krg generate all                       # fresh rebuild into the generator's constants/
 krg generate all --skip-pois           # reuse knowledge_pois.json; regenerate runs only
 krg generate all --out-dir DIR         # also mirror the outputs verbatim into DIR
-python scripts/promote_to_app.py       # validate + copy into the-blue-app/constants/
+python scripts/promote_to_app.py --app-dir ../the-blue-app   # validate + copy into the app
 ```
 
 The pipeline is gated end to end: a fresh `generate all` regenerates from
-scratch, the completeness check fails loudly if any of the 320 runs are missing,
-and `promote_to_app.py` refuses to overwrite the app's `constants/` unless
+scratch and **exits non-zero** if any of the 320 runs are missing or the POI set
+is empty (with `--out-dir`, nothing is mirrored on a failed gate).
+`promote_to_app.py` refuses to overwrite the app's `constants/` unless
 `runPoints.json` has all 320 runs and the POI set is non-empty (it copies
 `knowledge_pois.json` → the app's `knowledgePois.json`; pass `--allow-partial`
 to override). `--out-dir` is a raw mirror that keeps the generator's filenames,
-so for the app use `promote_to_app.py` rather than `--out-dir`. POI geocoding
-(Mapbox) needs a token via `--token`, `MAPBOX_TOKEN` / `EXPO_PUBLIC_MAPBOX_PK`
-in the environment, or `--env-file`; the Points List PDF defaults to
-`extract_pois.py`'s default path (override with `--pdf`).
+so for the app use `promote_to_app.py` rather than `--out-dir`.
+
+Requirements for a full rebuild:
+- **Network**: Overpass (graph, turn restrictions, OSM POIs) and Nominatim
+  (run endpoints not covered by `poi_overrides.json`).
+- **Mapbox token** for POI geocoding: `--token`, `MAPBOX_TOKEN` /
+  `EXPO_PUBLIC_MAPBOX_PK` in the environment, or `--env-file`.
+- **Points List PDF**: defaults to `knowledge-of-london-points-list.pdf` at the
+  repo root; override with `--pdf`.
+- **Borough enrichment reference data** (optional):
+  `constants/london_boroughs.geojson` and `constants/yellow_badge_sectors.json`.
+  These are inputs the repo does not ship — when absent, enrichment is skipped
+  with a message and the rest of the build still completes. Pass `--no-enrich`
+  to skip it silently.
+- `krg generate` shells out to `scripts/`, so it needs the repo checkout
+  (`pip install -e .`), not a plain wheel install.
+
+Individual runs can be rebuilt in place: `krg generate runs 12` regenerates run
+12 and merges it back into the existing `runPoints.json`, preserving the QA
+records of every other run.
 
 ### Running the demo
 

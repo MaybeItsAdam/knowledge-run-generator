@@ -29,8 +29,9 @@ class RouterRegressionTests(unittest.TestCase):
         G.add_edge(4, 5, length=55.0, highway="service")
         G.add_edge(5, 3, length=55.0, highway="service")
 
-        route = _route_through_waypoints(G, origin_node=1, dest_node=3, waypoint_nodes=[])
+        route, stats = _route_through_waypoints(G, origin_node=1, dest_node=3, waypoint_nodes=[])
         self.assertEqual(route, [1, 2, 3])
+        self.assertEqual(stats, {"unreachable_legs": 0, "truncated_legs": 0})
 
     def test_u_turn_loop_is_not_preferred(self):
         G = nx.MultiDiGraph()
@@ -46,8 +47,9 @@ class RouterRegressionTests(unittest.TestCase):
         G.add_edge(1, 2, length=20.0, highway="primary")
         G.add_edge(2, 1, length=20.0, highway="primary")
 
-        route = _route_through_waypoints(G, origin_node=1, dest_node=3, waypoint_nodes=[])
+        route, stats = _route_through_waypoints(G, origin_node=1, dest_node=3, waypoint_nodes=[])
         self.assertEqual(route, [1, 3])
+        self.assertEqual(stats, {"unreachable_legs": 0, "truncated_legs": 0})
 
 
 class CollapseRevisitsTests(unittest.TestCase):

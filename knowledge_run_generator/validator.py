@@ -362,23 +362,10 @@ def check_directness(G, route_nodes, origin_node, dest_node,
 # Street Coverage Check
 # ---------------------------------------------------------------------------
 
-_ABBREVIATIONS = {
-    " ST": " STREET", " RD": " ROAD", " AVE": " AVENUE",
-    " SQ": " SQUARE", " PL": " PLACE", " LN": " LANE",
-    " GDNS": " GARDENS", " PK": " PARK", " CIR": " CIRCUS",
-    " HL": " HILL", " RI": " RISE", " CR": " CRESCENT",
-}
-
-
-def _normalise_street(name):
-    """Upper-case, strip punctuation, expand common abbreviations."""
-    if not name:
-        return ""
-    n = str(name).upper().strip().replace("'", "").replace(".", "").replace("'", "")
-    for abbr, full in _ABBREVIATIONS.items():
-        if n.endswith(abbr):
-            n = n[: -len(abbr)] + full
-    return n
+# Street-name canonicalisation is shared with the alias index, the street
+# index and the corrector, so the coverage check can't disagree with routing
+# about whether a street was traversed.
+from .aliases import normalise as _normalise_street
 
 
 def _extract_route_streets(G, route_nodes):
@@ -433,6 +420,90 @@ def check_street_coverage(G, route_nodes, expected_streets, min_coverage=0.6):
         "expected": len(expected_norm),
         "missing": missing,
     }
+
+
+# ---------------------------------------------------------------------------
+# Structural checks on a generated run object
+# ---------------------------------------------------------------------------
+
+def check_run_shape(
+    run: dict,
+    max_endpoint_drift_m: float = 50.0,
+    min_ratio: float = 0.95,
+    require_reverse: bool = True,
+) -> list[str]:
+    """Return the structural problems with a generated run object.
+
+    Counting ids says a run is *present*; this says it is *usable*. A run can
+    be written with two nodes of geometry between endpoints a mile apart and
+    still satisfy a presence check, which is the gap that let a partial data
+    set look complete.
+
+    Checks, in order of how badly they'd break a consumer:
+      * the object has an id, endpoints and a route at all,
+      * the geometry has at least two positions,
+      * the distance is positive and not shorter than the straight line
+        (physically impossible; means the geometry and the metadata disagree),
+      * the geometry actually starts and ends at the stated endpoints,
+      * there is at least one navigation step.
+    """
+    problems: list[str] = []
+
+    run_id = run.get("id")
+    if run_id is None:
+        problems.append("missing id")
+
+    directions = [("route", run.get("route"))]
+    if require_reverse:
+        directions.append(("routeReverse", run.get("routeReverse")))
+
+    start = (run.get("start") or {}).get("coordinates")
+    end = (run.get("end") or {}).get("coordinates")
+    if not (isinstance(start, (list, tuple)) and len(start) == 2):
+        problems.append("missing start coordinates")
+        start = None
+    if not (isinstance(end, (list, tuple)) and len(end) == 2):
+        problems.append("missing end coordinates")
+        end = None
+
+    for label, route in directions:
+        if not isinstance(route, dict):
+            problems.append(f"{label}: missing")
+            continue
+
+        coords = ((route.get("geometry") or {}).get("coordinates")) or []
+        if len(coords) < 2:
+            problems.append(f"{label}: geometry has {len(coords)} position(s)")
+            continue
+
+        distance = route.get("distance") or 0
+        if distance <= 0:
+            problems.append(f"{label}: distance is {distance}")
+
+        # Endpoints are [lon, lat]; the reverse route runs end -> start.
+        want_first, want_last = (start, end) if label == "route" else (end, start)
+        for what, want, got in (("start", want_first, coords[0]),
+                                ("end", want_last, coords[-1])):
+            if not want:
+                continue
+            drift = _haversine(want[1], want[0], got[1], got[0])
+            if drift > max_endpoint_drift_m:
+                problems.append(
+                    f"{label}: geometry {what} is {drift:.0f}m from the stated point"
+                )
+
+        if start and end and distance > 0:
+            straight = _haversine(start[1], start[0], end[1], end[0])
+            if straight > 0 and distance < straight * min_ratio:
+                problems.append(
+                    f"{label}: distance {distance:.0f}m is shorter than the "
+                    f"{straight:.0f}m straight line"
+                )
+
+        if not route.get("steps"):
+            problems.append(f"{label}: no navigation steps")
+
+    return problems
 
 
 # ---------------------------------------------------------------------------

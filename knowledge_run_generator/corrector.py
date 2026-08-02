@@ -9,6 +9,8 @@ import math
 import networkx as nx
 import osmnx as ox
 
+from .aliases import normalise as _normalise_street
+
 
 MAX_CORRECTION_ATTEMPTS = 3
 
@@ -105,8 +107,9 @@ def fix_street_coverage(G, route_nodes, coverage_metrics, street_to_nodes,
 
     waypoints_with_proj = []
     for street in missing:
-        norm = street.upper().replace("'", "").replace(".", "")
-        nodes = street_to_nodes.get(norm, set())
+        # Must match how build_street_index keyed the index, or every
+        # coverage fix silently finds no nodes.
+        nodes = street_to_nodes.get(_normalise_street(street), set())
         if not nodes:
             continue
 
@@ -205,9 +208,14 @@ def correct_and_validate(G, origin_node, dest_node, initial_waypoints,
     Parameters
     ----------
     route_fn : callable(G, origin_node, dest_node, waypoint_nodes) → (route_nodes, metadata)
-    validate_fn : callable(G, route_nodes, origin_node, dest_node, prohibited_turns, expected_streets, config, waypoint_nodes) → ValidationResult
+    validate_fn : callable(G, route_nodes, origin_node, dest_node, prohibited_turns, expected_streets, config, waypoint_nodes, exempted_turns) → ValidationResult
     config : optional per-run overrides dict
-    exempted_turns : optional set of (from, via, to) nodes to excuse
+    exempted_turns : optional set of (from, via, to) node triples that OSM
+        marks prohibited but which are legal for this run (e.g. taxi/PSV
+        exemptions). Forwarded to ``validate_fn``.
+
+    Returns
+    -------
     (route_nodes, validation_result, correction_log)
     """
     config = config or {}
@@ -226,7 +234,8 @@ def correct_and_validate(G, origin_node, dest_node, initial_waypoints,
 
         result = validate_fn(
             G, route_nodes, origin_node, dest_node,
-            prohibited_turns, expected_streets, config, waypoints
+            prohibited_turns, expected_streets, config, waypoints,
+            exempted_turns,
         )
 
         # Track best by distance ratio or just fallback to the first attempt
