@@ -156,7 +156,7 @@
     ],
     "GOLDSMITH'S ROW E2": [
         51.5316,
-        -0.0660
+        -0.066
     ],
     "WOODSTOCK AVEUNE NW11": [
         51.5737,
@@ -168,7 +168,7 @@
     ],
     "SOUTH TOTTENHAM STATION N15": [
         51.5802,
-        -0.0720
+        -0.072
     ],
     "HOLLOWAY ROAD STATION N7": [
         51.5528,
@@ -187,16 +187,16 @@
         -0.1088
     ],
     "BETHNAL GREEN B_R STATION E2": [
-        51.5230,
+        51.523,
         -0.0533
     ],
     "BETHNAL GREEN STATION E2": [
-        51.5230,
+        51.523,
         -0.0533
     ],
     "TWELVE TREES CRESCENT E3": [
-        51.5160,
-        0.0090
+        51.516,
+        0.009
     ],
     "QUEEN'S ROAD, PECKHAM STATION SE15": [
         51.4741,
@@ -215,15 +215,15 @@
         -0.1529
     ],
     "PARSON'S GREEN STATION SW6": [
-        51.4750,
+        51.475,
         -0.2011
     ],
     "PARSONS GREEN STATION SW6": [
-        51.4750,
+        51.475,
         -0.2011
     ],
     "THE MINISTRY OF DEFENCE SW1": [
-        51.5040,
+        51.504,
         -0.1249
     ],
     "PALLADIUM THEATRE W1": [
@@ -232,19 +232,19 @@
     ],
     "ST JOHN'S WOOD HIGH STREET NW8": [
         51.5361,
-        -0.1750
+        -0.175
     ],
     "BRIXTON MARKET SW9": [
-        51.4620,
-        -0.1140
+        51.462,
+        -0.114
     ],
     "LOUGHBOROUGH JUNCTION STATION SW9": [
         51.4661,
-        -0.1020
+        -0.102
     ],
     "BROOKMILL ROAD SE8": [
-        51.4750,
-        -0.0210
+        51.475,
+        -0.021
     ],
     "DEPTFORD STATION SE8": [
         51.4788,
@@ -260,7 +260,7 @@
     ],
     "CARLTON VALE NW6": [
         51.5325,
-        -0.1940
+        -0.194
     ],
     "ROYAL COLLEGE OF MUSIC SW7": [
         51.4997,
@@ -271,7 +271,7 @@
         -0.1171
     ],
     "HARRINGAY STATION N4": [
-        51.5770,
+        51.577,
         -0.1052
     ],
     "BRIXTON PRISON SW2": [
@@ -292,10 +292,10 @@
     ],
     "TOOTING BROADWAY STATION SW17": [
         51.4278,
-        -0.1680
+        -0.168
     ],
     "WANDSWORTH ROAD STATION SW8": [
-        51.4700,
+        51.47,
         -0.1384
     ],
     "CALEDONIAN ROAD STATION N7": [
@@ -304,7 +304,7 @@
     ],
     "HIGHBURY FIELDS N5": [
         51.5502,
-        -0.1010
+        -0.101
     ],
     "ST PAUL'S STATION EC1": [
         51.5149,
@@ -319,16 +319,16 @@
         -0.1421
     ],
     "BRONDESBURY PARK STATION NW6": [
-        51.5390,
-        -0.2100
+        51.539,
+        -0.21
     ],
     "GOSPEL OAK STATION NW5": [
         51.5553,
         -0.1508
     ],
     "HIGHGATE ROAD NW5": [
-        51.5580,
-        -0.1450
+        51.558,
+        -0.145
     ],
     "HIGH STREET, HORNSEY N8": [
         51.5872,
@@ -352,23 +352,23 @@
     ],
     "LAMBETH NORTH STATION SW1": [
         51.4989,
-        -0.1120
+        -0.112
     ],
     "THE GUILDHALL EC2": [
         51.5159,
-        -0.0920
+        -0.092
     ],
     "GUILDHALL EC2": [
         51.5159,
-        -0.0920
+        -0.092
     ],
     "DOGGETT ROAD SE6": [
         51.4456,
-        -0.0240
+        -0.024
     ],
     "BREAKSPEARS ROAD SE4": [
-        51.4640,
-        -0.0330
+        51.464,
+        -0.033
     ],
     "MOORFIELDS EYE HOSPITAL EC1": [
         51.5273,
@@ -376,7 +376,7 @@
     ],
     "BBC TELEVISION CENTRE W12": [
         51.5112,
-        -0.2250
+        -0.225
     ],
     "ST PETER'S CHURCH SE17": [
         51.4851,
@@ -391,7 +391,14 @@
         -0.1558
     ],
     "AMERSHAM VALE": [
-        51.4770,
+        51.477,
         -0.0321
-    ]
+    ],
+    "HOLLOWAY PRISON": "HM Prison Holloway",
+    "WANDSWORTH PRISON": "HM Prison Wandsworth",
+    "BRIXTON PRISON": "HM Prison Brixton",
+    "THE NEW DEN": "The Den",
+    "ROYAL HOSPITAL SW3": "Royal Hospital Chelsea",
+    "BBC TELEVISION CENTRE": "Television Centre",
+    "THEATRE ROYAL STRATFORD": "Theatre Royal Stratford East"
 }

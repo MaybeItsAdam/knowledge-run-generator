@@ -19,6 +19,8 @@ from knowledge_run_generator.gazetteer import (
     load_knowledge_pois,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _graph():
     """Two same-named streets far apart, plus one uniquely named street."""
@@ -190,6 +192,107 @@ class StationMatchingTests(unittest.TestCase):
         self.assertAlmostEqual(hit["lat"], 51.500)
 
 
+class AliasTests(unittest.TestCase):
+    """A Blue Book name can point at the name a data source actually uses."""
+
+    def setUp(self):
+        self.G = _graph()
+        self.alias_index = build_alias_index(self.G)
+
+    def test_string_valued_override_is_an_alias(self):
+        gz = Gazetteer(
+            overrides={"HOLLOWAY PRISON": "HM Prison Holloway"},
+            osm_pois={"HM PRISON HOLLOWAY": {"lat": 51.556, "lon": -0.117}},
+            alias_index=self.alias_index,
+        )
+        hit = gz.lookup_coords("HOLLOWAY PRISON N7")
+        self.assertIsNotNone(hit)
+        self.assertAlmostEqual(hit["lat"], 51.556)
+
+    def test_same_as_dict_form_also_works(self):
+        gz = Gazetteer(
+            overrides={"THE NEW DEN": {"same_as": "The Den"}},
+            osm_pois={"THE DEN": {"lat": 51.486, "lon": -0.051, "kind": "leisure"}},
+            alias_index=self.alias_index,
+        )
+        self.assertIsNotNone(gz.lookup_coords("THE NEW DEN SE16"))
+
+    def test_alias_can_point_at_a_street(self):
+        gz = Gazetteer(
+            overrides={"SOME OLD NAME": "Aberdeen Road"},
+            alias_index=self.alias_index,
+        )
+        entry = gz.resolve("SOME OLD NAME N5", self.G)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.source, "street")
+
+    def test_alias_to_an_unknown_name_fails_softly(self):
+        gz = Gazetteer(
+            overrides={"MYSTERY PLACE": "Somewhere That Does Not Exist"},
+            alias_index=self.alias_index,
+        )
+        self.assertIsNone(gz.lookup_coords("MYSTERY PLACE W1"))
+
+    def test_alias_cycles_terminate(self):
+        gz = Gazetteer(
+            overrides={"A PLACE": "B Place", "B PLACE": "A Place"},
+            alias_index=self.alias_index,
+        )
+        self.assertIsNone(gz.lookup_coords("A PLACE W1"))
+
+    def test_shipped_overrides_parse(self):
+        path = (REPO_ROOT / "knowledge_run_generator" / "blue_book_demo"
+                / "poi_overrides.json")
+        overrides = json.loads(path.read_text())
+        gz = Gazetteer(overrides=overrides)
+        # Coordinate entries still resolve; alias entries don't resolve to a
+        # position on their own (their targets live in the other tiers).
+        self.assertIsNotNone(gz.lookup_coords("RITZ HOTEL SW1"))
+        self.assertTrue(any(isinstance(v, str) for v in overrides.values()))
+
+
+class HarvestCollisionTests(unittest.TestCase):
+    """Same-named places of different kinds must both survive the harvest."""
+
+    def _payload(self):
+        return {"elements": [
+            {"type": "node", "id": 1, "lat": 51.564, "lon": -0.106,
+             "tags": {"name": "Finsbury Park", "railway": "station"}},
+            {"type": "node", "id": 2, "lat": 51.567, "lon": -0.098,
+             "tags": {"name": "Finsbury Park", "leisure": "park"}},
+        ]}
+
+    def test_alternate_is_kept_not_dropped(self):
+        from knowledge_run_generator.osm_pois import parse_overpass
+
+        parsed = parse_overpass(self._payload())
+        self.assertEqual(list(parsed), ["FINSBURY PARK"])
+        self.assertEqual(len(parsed["FINSBURY PARK"]["_others"]), 1)
+        self.assertEqual(parsed["FINSBURY PARK"]["_others"][0]["kind"], "leisure")
+
+    def test_lookup_picks_the_kind_the_query_asked_for(self):
+        from knowledge_run_generator.osm_pois import parse_overpass
+
+        gz = Gazetteer(osm_pois=parse_overpass(self._payload()))
+        station = gz.lookup_coords("FINSBURY PARK STATION N4")
+        park = gz.lookup_coords("FINSBURY PARK N4")
+        self.assertEqual(station["kind"], "station")
+        self.assertEqual(park["kind"], "leisure")
+
+    def test_duplicates_of_the_same_kind_are_still_collapsed(self):
+        from knowledge_run_generator.osm_pois import parse_overpass
+
+        payload = {"elements": [
+            {"type": "node", "id": 1, "lat": 51.5, "lon": -0.1,
+             "tags": {"name": "Same Place", "amenity": "pub"}},
+            {"type": "node", "id": 2, "lat": 51.6, "lon": -0.2,
+             "tags": {"name": "Same Place", "amenity": "pub"}},
+        ]}
+        parsed = parse_overpass(payload)
+        self.assertNotIn("_others", parsed["SAME PLACE"])
+        self.assertEqual(parsed["SAME PLACE"]["osm_id"], "node/1")
+
+
 class HarvestCoverageTests(unittest.TestCase):
     def test_tag_groups_cover_the_endpoint_categories_we_need(self):
         from knowledge_run_generator.osm_pois import _TAG_GROUPS
@@ -246,7 +349,9 @@ class IndexCacheTests(unittest.TestCase):
     def test_legacy_cache_without_a_fingerprint_is_discarded(self):
         import pickle
 
-        from knowledge_run_generator.aliases import build_alias_index, load_or_build_alias_index
+        from knowledge_run_generator.aliases import (
+            build_alias_index, load_or_build_alias_index,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp) / "alias_index.pkl"

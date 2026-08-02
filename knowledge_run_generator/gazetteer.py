@@ -243,21 +243,33 @@ class _PoiTable:
             parsed = _parse_override(value)
             if parsed is None:
                 continue
-            upper = str(key).upper().strip()
-            self._exact.setdefault(upper, parsed)
 
+            # Same-named alternates kept by the OSM harvest (a station and a
+            # park both called "Finsbury Park"). The primary stays first.
+            variants = [parsed]
+            if isinstance(value, dict):
+                for other in value.get("_others") or []:
+                    parsed_other = _parse_override(other)
+                    if parsed_other is not None:
+                        variants.append(parsed_other)
+
+            upper = str(key).upper().strip()
             stem, postcode = _split_postcode(upper)
-            if postcode and not parsed.get("postal_district"):
-                parsed["postal_district"] = postcode
+            for variant in variants:
+                if postcode and not variant.get("postal_district"):
+                    variant["postal_district"] = postcode
+
+            self._exact.setdefault(upper, parsed)
             self._exact.setdefault(stem, parsed)
 
             norm = _normalise_name(stem)
             if norm:
-                self._normalised.setdefault(norm, []).append(parsed)
+                self._normalised.setdefault(norm, []).extend(variants)
 
-            if parsed.get("kind") in _STATION_KINDS or _looks_like_station(stem):
-                for station_key in _station_stems(stem):
-                    self._stations.setdefault(station_key, []).append(parsed)
+            for variant in variants:
+                if variant.get("kind") in _STATION_KINDS or _looks_like_station(stem):
+                    for station_key in _station_stems(stem):
+                        self._stations.setdefault(station_key, []).append(variant)
 
     def __len__(self) -> int:
         return len(self._exact)
@@ -265,25 +277,52 @@ class _PoiTable:
     def lookup(self, address: str) -> dict | None:
         upper = address.upper().strip()
         stem, postcode = _split_postcode(upper)
+        wants_station = _looks_like_station(stem)
+
+        # Gather every record this name could mean — an exact hit doesn't get
+        # to short-circuit, because the name may have same-named alternates of
+        # a different kind and only the query says which one is wanted.
+        # Exact matches go first so they win ties in _best().
+        candidates: list[dict] = []
+        seen: set[int] = set()
+
+        def add(record):
+            if record is not None and id(record) not in seen:
+                seen.add(id(record))
+                candidates.append(record)
 
         for key in (upper, stem):
-            hit = self._exact.get(key)
-            if hit is not None:
-                return hit
-
-        candidates = self._normalised.get(_normalise_name(stem))
-        if not candidates and _looks_like_station(stem):
+            add(self._exact.get(key))
+        for record in self._normalised.get(_normalise_name(stem)) or []:
+            add(record)
+        if wants_station:
             for station_key in _station_stems(stem):
-                candidates = self._stations.get(station_key)
-                if candidates:
-                    break
+                for record in self._stations.get(station_key) or []:
+                    add(record)
+
         if not candidates:
             return None
-        if len(candidates) > 1 and postcode:
-            for candidate in candidates:
+        return self._best(candidates, postcode, wants_station)
+
+    @staticmethod
+    def _best(candidates: list[dict], postcode: str | None, wants_station: bool) -> dict:
+        """Pick among same-named places: kind first, then postal district."""
+        pool = candidates
+        if wants_station:
+            stations = [c for c in pool if c.get("kind") in _STATION_KINDS]
+            if stations:
+                pool = stations
+        else:
+            # "FINSBURY PARK N4" means the park, not the station of that name.
+            non_stations = [c for c in pool if c.get("kind") not in _STATION_KINDS]
+            if non_stations:
+                pool = non_stations
+
+        if len(pool) > 1 and postcode:
+            for candidate in pool:
                 if str(candidate.get("postal_district", "")).upper() == postcode:
                     return candidate
-        return candidates[0]
+        return pool[0]
 
 
 class Gazetteer:
@@ -320,6 +359,20 @@ class Gazetteer:
         knowledge_pois: dict | None = None,
     ):
         self._overrides_raw: dict[str, Any] = overrides or {}
+        # An override whose value is a name rather than a position is an alias:
+        # "HOLLOWAY PRISON": "HM Prison Holloway" says the Blue Book's name for
+        # a point differs from the one in the data, without pinning a
+        # coordinate we'd then have to maintain.
+        self._aliases: dict[str, str] = {}
+        for key, value in self._overrides_raw.items():
+            target = None
+            if isinstance(value, str):
+                target = value
+            elif isinstance(value, dict) and isinstance(value.get("same_as"), str):
+                target = value["same_as"]
+            if target:
+                self._aliases[_normalise_name(_split_postcode(key)[0])] = target
+
         self._tables = (
             _PoiTable(self._overrides_raw, "override"),
             _PoiTable(knowledge_pois, "knowledge_poi"),
@@ -337,14 +390,36 @@ class Gazetteer:
 
     def lookup_coords(self, address: str) -> dict | None:
         """Return the raw coord dict for *address* from the first tier that
-        knows it, tagged with ``_source``."""
+        knows it, tagged with ``_source``.
+
+        Aliases are followed first, so a Blue Book name can be pointed at the
+        name a data source actually uses without duplicating its coordinates.
+        """
         if not address:
             return None
+        address = self._follow_aliases(address)
         for table in self._tables:
             hit = table.lookup(address)
             if hit is not None:
                 return self._tag_source(dict(hit), table.source)
         return None
+
+    def _follow_aliases(self, address: str, max_hops: int = 4) -> str:
+        """Rewrite *address* through the alias chain, if any.
+
+        An alias that points at a name nothing knows is harmless: resolution
+        simply continues to fail exactly as it did before, and falls through
+        to the geocoder.
+        """
+        seen = set()
+        for _ in range(max_hops):
+            key = _normalise_name(_split_postcode(address)[0])
+            target = self._aliases.get(key)
+            if target is None or key in seen:
+                break
+            seen.add(key)
+            address = target
+        return address
 
     @staticmethod
     def _tag_source(record: dict, source: str) -> dict:
@@ -440,7 +515,10 @@ class Gazetteer:
         if self.alias_index is None:
             return None
 
-        stem, postcode = _split_postcode(address)
+        # An alias may point at a street name, not only at a named point.
+        _original_stem, original_postcode = _split_postcode(address)
+        stem, postcode = _split_postcode(self._follow_aliases(address))
+        postcode = postcode or original_postcode
         canonical = self.alias_index.resolve(stem)
         if canonical is None:
             return None
