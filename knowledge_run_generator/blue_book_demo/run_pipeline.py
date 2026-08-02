@@ -27,7 +27,7 @@ from knowledge_run_generator.router import (
     nodes_to_coords_geometry, _extract_route_metadata,
 )
 from knowledge_run_generator.validator import (
-    load_turn_restrictions, validate_route, ValidationResult,
+    check_run_shape, load_turn_restrictions, validate_route, ValidationResult,
 )
 from knowledge_run_generator.corrector import correct_and_validate
 from knowledge_run_generator.geojson_export import route_to_geojson_feature, export_all_runs_geojson
@@ -419,7 +419,7 @@ def _remove_backtracks(G, waypoint_nodes, start_coords, end_coords):
 # ---------------------------------------------------------------------------
 
 def process_runs(output_file, limit=None, export_geojson=False, network_type=None,
-                 select_ids=None):
+                 select_ids=None, cache_dir=None):
     """Process Blue Book runs into ``output_file``.
 
     ``select_ids`` (an iterable of run ids) restricts processing to those runs;
@@ -486,9 +486,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     print("Loading graph...")
     G = load_graph(network_type=network_type)
 
-    # Street index
-    cache_dir = Path("/tmp/app_cache")
-    cache_dir.mkdir(exist_ok=True)
+    # Street index. cache_dir is a parameter so tests (and parallel builds)
+    # can keep their derived indexes out of the shared /tmp location.
+    cache_dir = Path(cache_dir) if cache_dir else Path("/tmp/app_cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
     street_to_nodes = build_street_index(G, cache_dir)
     print(f"Indexed {len(street_to_nodes)} street names.")
 
@@ -593,6 +594,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         if not start or not end:
             print(f"  SKIP: Failed to geocode Run {run_id}")
             qa_results[str(run_id)] = {
+                "status": "failed",
+                "failure_reason": "geocode failed for start or end",
                 "passed": False,
                 "preflight_ok": False,
                 "preflight_reasons": ["geocode failed for start or end"],
@@ -617,6 +620,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             for r in pre.reasons:
                 print(f"  [preflight-fail] {r}")
             qa_results[str(run_id)] = {
+                "status": "failed",
+                "failure_reason": "preflight failed",
                 "passed": False,
                 "preflight_ok": False,
                 "preflight_reasons": pre.reasons,
@@ -720,6 +725,12 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
 
             if not route_nodes or len(route_nodes) < 2:
                 print(f"  ERROR: No route produced for Run {run_id}")
+                qa_results[str(run_id)] = {
+                    "status": "failed",
+                    "failure_reason": "no route produced",
+                    "passed": False,
+                    "preflight_ok": pre.ok,
+                }
                 continue
 
             status = "PASS" if validation.passed else "FAIL"
@@ -826,7 +837,14 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             processed_ids.add(run_id)
 
             # QA record — expanded so failures can be triaged without re-running
+            shape_problems = check_run_shape(run_obj)
+            if shape_problems:
+                print(f"  [shape] {len(shape_problems)} structural problem(s): "
+                      f"{shape_problems[:3]}")
+
             qa_results[str(run_id)] = {
+                "status": "ok" if not shape_problems else "failed",
+                "shape_problems": shape_problems,
                 "passed": validation.passed,
                 "ratio": metrics.get("ratio"),
                 "max_offset_m": metrics.get("max_lateral_offset_m"),
@@ -867,9 +885,14 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             print(f"  ERROR processing Run {run_id}: {e}")
             import traceback
             traceback.print_exc()
+            qa_results[str(run_id)] = {
+                "status": "failed",
+                "failure_reason": f"{type(e).__name__}: {e}",
+                "passed": False,
+                "preflight_ok": pre.ok,
+            }
             continue
 
-        time.sleep(0.5)
 
     # ------------------------------------------------------------------
     # Final save
@@ -898,10 +921,23 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     present_ids = {r["id"] for r in runs_data}
     missing_ids = sorted(expected_ids - present_ids)
     if limit is None and select_ids is None:
+        # Any expected id with no record at all was dropped before it could
+        # report anything; give it one so the report always covers all 320.
+        for run_id in expected_ids:
+            qa_results.setdefault(str(run_id), {
+                "status": "failed",
+                "failure_reason": "not processed",
+                "passed": False,
+            })
+        unusable = sorted(
+            int(k) for k, v in qa_results.items()
+            if str(k).lstrip("-").isdigit() and v.get("status") == "failed"
+        )
         qa_results["_completeness"] = {
             "expected": len(expected_ids),
             "present": len(present_ids),
             "missing_ids": missing_ids,
+            "unusable_ids": unusable,
         }
         with open(qa_path, "w") as f:
             json.dump(qa_results, f, indent=2, default=_json_default)
@@ -911,6 +947,9 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                   f"MISSING {len(missing_ids)}: {missing_ids}")
         else:
             print(f"COMPLETENESS: all {len(expected_ids)} runs present. ✓")
+        if unusable:
+            print(f"USABILITY: {len(unusable)} run(s) present but flagged unusable: "
+                  f"{unusable[:20]}{'...' if len(unusable) > 20 else ''}")
 
     # Summary with categorised failure reasons. Records are keyed by
     # stringified run id; exclude the non-run "_completeness" sentinel so the

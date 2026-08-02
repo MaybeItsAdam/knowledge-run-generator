@@ -90,6 +90,76 @@ class ExemptedTurnsTests(unittest.TestCase):
         self.assertEqual(seen.get("exempted_turns"), exempted)
 
 
+def _run_object(**overrides):
+    """A minimal well-formed run: ~1.4 km due east across central London."""
+    start, end = [-0.100, 51.520], [-0.080, 51.520]
+    line = [start, [-0.090, 51.520], end]
+    run = {
+        "id": 1,
+        "start": {"name": "A", "coordinates": start},
+        "end": {"name": "B", "coordinates": end},
+        "route": {
+            "geometry": {"type": "LineString", "coordinates": line},
+            "distance": 1500.0,
+            "steps": [{"instruction": "Leave Origin on A"}],
+        },
+        "routeReverse": {
+            "geometry": {"type": "LineString", "coordinates": list(reversed(line))},
+            "distance": 1500.0,
+            "steps": [{"instruction": "Leave Origin on B"}],
+        },
+    }
+    run.update(overrides)
+    return run
+
+
+class RunShapeTests(unittest.TestCase):
+    """Presence is not usability — these are the defects an id count misses."""
+
+    def test_well_formed_run_has_no_problems(self):
+        from knowledge_run_generator.validator import check_run_shape
+
+        self.assertEqual(check_run_shape(_run_object()), [])
+
+    def test_degenerate_geometry_is_caught(self):
+        from knowledge_run_generator.validator import check_run_shape
+
+        run = _run_object()
+        run["route"]["geometry"]["coordinates"] = [[-0.100, 51.520]]
+        problems = check_run_shape(run)
+        self.assertTrue(any("geometry has 1 position" in p for p in problems))
+
+    def test_distance_shorter_than_the_straight_line_is_caught(self):
+        from knowledge_run_generator.validator import check_run_shape
+
+        run = _run_object()
+        run["route"]["distance"] = 10.0
+        problems = check_run_shape(run)
+        self.assertTrue(any("shorter than" in p for p in problems))
+
+    def test_geometry_not_reaching_the_stated_endpoint_is_caught(self):
+        from knowledge_run_generator.validator import check_run_shape
+
+        run = _run_object()
+        run["route"]["geometry"]["coordinates"][-1] = [-0.010, 51.520]  # ~5 km off
+        problems = check_run_shape(run)
+        self.assertTrue(any("geometry end is" in p for p in problems))
+
+    def test_missing_steps_are_caught(self):
+        from knowledge_run_generator.validator import check_run_shape
+
+        run = _run_object()
+        run["route"]["steps"] = []
+        self.assertIn("route: no navigation steps", check_run_shape(run))
+
+    def test_reverse_direction_is_checked_too(self):
+        from knowledge_run_generator.validator import check_run_shape
+
+        run = _run_object()
+        del run["routeReverse"]
+        self.assertIn("routeReverse: missing", check_run_shape(run))
+
+
 class EnrichmentInputTests(unittest.TestCase):
     def test_missing_inputs_reports_absent_reference_files(self):
         from knowledge_run_generator.poi_enrichment import missing_inputs

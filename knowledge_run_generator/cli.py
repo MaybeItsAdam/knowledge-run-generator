@@ -493,6 +493,14 @@ def _build_pois(scripts, constants, pdf, token, env_file, limit, enrich):
 
 
 def _validate_outputs(constants, expected=320):
+    """Gate the generated data set. Presence *and* usability.
+
+    Counting ids was never enough: a run written with a two-position geometry
+    between endpoints a mile apart satisfies a presence check and breaks every
+    consumer downstream.
+    """
+    from knowledge_run_generator.validator import check_run_shape
+
     problems = []
     rp = constants / "runPoints.json"
     runs = json.loads(rp.read_text()) if rp.exists() else []
@@ -500,6 +508,20 @@ def _validate_outputs(constants, expected=320):
     missing = [i for i in range(1, expected + 1) if i not in present]
     if missing:
         problems.append(f"runs incomplete: missing {missing}")
+
+    malformed = {}
+    for run in runs:
+        shape_problems = check_run_shape(run)
+        if shape_problems:
+            malformed[run.get("id")] = shape_problems
+    if malformed:
+        sample = sorted(malformed)[:10]
+        detail = "; ".join(f"{i}: {malformed[i][0]}" for i in sample)
+        problems.append(
+            f"{len(malformed)} run(s) structurally invalid ({detail}"
+            + (" ..." if len(malformed) > len(sample) else "") + ")"
+        )
+
     kp = constants / "knowledge_pois.json"
     pois = json.loads(kp.read_text()) if kp.exists() else []
     if not pois:
