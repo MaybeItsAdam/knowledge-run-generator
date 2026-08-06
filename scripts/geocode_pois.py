@@ -16,6 +16,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Repo-relative paths so the script works on any checkout, not just one
 # machine. ROOT is the knowledge-run-generator repo root.
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from knowledge_run_generator.cache import cache_dir as _krg_cache_dir, cache_path as _krg_cache_path
 
 # Mapbox token resolution, in priority order:
 #   1. an explicit --token,
@@ -44,10 +47,9 @@ def _load_mapbox_token(env_file: str | None = None, token: str | None = None) ->
 # Resolved in main() from env var / --env-file; geocode_mapbox reads it.
 MAPBOX_TOKEN: str | None = None
 
-# Ensure cache directory exists
-CACHE_DIR = "/tmp/app_cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
-DB_PATH = os.path.join(CACHE_DIR, "geocoding_cache.db")
+# The SQLite cache holds paid Mapbox lookups — it must survive reboots.
+CACHE_DIR = str(_krg_cache_dir())
+DB_PATH = str(_krg_cache_path("geocoding_cache.db"))
 
 # Bias Mapbox toward London/UK so e.g. "Albion pub" resolves near the run, not
 # in another city. proximity is a soft ranking hint (central London); country
@@ -222,6 +224,28 @@ def postcode_centroid(postcode):
     return center
 
 
+# Free offline last-chance tier: the committed OSM harvest. Mapbox misses a
+# fair number of pubs/venues that OSM names exactly; the same postcode-distance
+# gate applies so a same-named place across town is still rejected.
+_osm_pois = None
+_osm_lock = threading.Lock()
+
+
+def _osm_lookup(name):
+    global _osm_pois
+    with _osm_lock:
+        if _osm_pois is None:
+            path = ROOT / "constants" / "osm_pois.json"
+            try:
+                _osm_pois = json.loads(path.read_text()).get("pois", {})
+            except Exception:
+                _osm_pois = {}
+    entry = _osm_pois.get(name.upper())
+    if entry and "lat" in entry and "lon" in entry:
+        return entry["lat"], entry["lon"]
+    return None
+
+
 def process_poi(poi):
     name = poi.get("name", "").strip()
     pd = poi.get("postal_district", "").strip()
@@ -243,6 +267,11 @@ def process_poi(poi):
             continue  # right name, wrong borough -> reject, try next variant
         coords = cand
         break
+
+    if not coords:
+        cand = _osm_lookup(name)
+        if cand and not (center and _haversine_m(cand[0], cand[1], center[0], center[1]) > MAX_POSTCODE_DIST_M):
+            coords = cand
 
     # [lng, lat] to match the GeoJSON standard used by runPoints.json
     poi["coordinates"] = [coords[1], coords[0]] if coords else None

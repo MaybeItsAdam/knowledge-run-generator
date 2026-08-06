@@ -112,10 +112,17 @@ secrets.json
 *.pem
 *.key
 
-# Generated output files (pipeline artefacts)
-constants/
+# Generated output files (pipeline artefacts). Hand-maintained INPUTS and the
+# committed OSM harvest snapshot (the tier-3 gazetteer) are un-ignored so a
+# fresh clone reproduces enrichment and endpoint resolution. (constants/* not
+# constants/ — git cannot re-include files under an excluded directory.)
+constants/*
+!constants/london_boroughs.geojson
+!constants/yellow_badge_sectors.json
+!constants/osm_pois.json
 output/
 *.geojson
+!constants/london_boroughs.geojson
 !blue_book_demo/poi_overrides.json
 !blue_book_demo/run_specific_fixes.json
 

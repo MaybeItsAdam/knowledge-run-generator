@@ -164,6 +164,13 @@ def extract(pdf_path: Path, limit: int | None = None):
             name = name.strip()
             if not name or name.isdigit():
                 continue
+            # Wrapped postcode-header fragments leak into the column stream as
+            # entries like "(Part)" or "SW2 - Brixton Hill / Tulse Hill (Part)";
+            # they are section metadata, not points.
+            if name.startswith("(") or _POSTCODE_HEADER_RE.match(name):
+                continue
+            if name == "(Part)" or name.endswith("(Part)") and "/" in name:
+                continue
             records.append(
                 {
                     "name": name,
@@ -259,6 +266,9 @@ def _handle_curiosity_line(records, line, region, page_no):
         return
     # Reject prose: titles are short and don't end with sentence punctuation.
     if name.endswith((".", ",")) or len(name.split()) > 12:
+        return
+    # Reject leaked section metadata (wrapped postcode headers, "(Part)" tails).
+    if name.startswith("(") or _POSTCODE_HEADER_RE.match(name):
         return
     records.append(
         {
