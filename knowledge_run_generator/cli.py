@@ -303,6 +303,77 @@ def diagnose(run_id, runs, direction, full, context):
 
 
 # ---------------------------------------------------------------------------
+# audit-endpoints  (A3 — bulk gazetteer triage for Blue Book run endpoints)
+# ---------------------------------------------------------------------------
+
+@cli.command("audit-endpoints")
+@click.option("--problems-only", is_flag=True,
+              help="Only list endpoints that fail preflight "
+                   "(unresolved, or snap distance > threshold).")
+@click.option("--max-snap", type=float, default=50.0, show_default=True,
+              help="Snap distance treated as a failure (same as preflight).")
+def audit_endpoints(problems_only, max_snap):
+    """Resolve every Blue Book run endpoint through the gazetteer.
+
+    Uses exactly the resolution path preflight uses (demo poi_overrides ->
+    knowledge_pois -> osm_pois -> street tier, then semantic snap), so the
+    output predicts which runs will fail preflight on endpoints — without
+    routing anything.
+    """
+    import krg
+    from knowledge_run_generator.blue_book_demo.run_pipeline import (
+        DEMO_DIR, parse_intermediary_file,
+    )
+
+    run_titles, _streets = parse_intermediary_file(
+        DEMO_DIR / "blue_book_runs_intermediary.txt"
+    )
+
+    session = krg.Session(poi_overrides=DEMO_DIR / "poi_overrides.json")
+    G = session.graph
+    gazetteer = session.gazetteer
+
+    # Distinct endpoint names, remembering which runs (and which side) use them.
+    endpoints: dict[str, list[str]] = {}
+    for run_id in sorted(run_titles):
+        origin, destination = run_titles[run_id]
+        endpoints.setdefault(origin, []).append(f"{run_id}/start")
+        endpoints.setdefault(destination, []).append(f"{run_id}/end")
+
+    unresolved: list[str] = []
+    over_snap: list[str] = []
+    source_counts: dict[str, int] = {}
+
+    for name in sorted(endpoints):
+        uses = endpoints[name]
+        entry = gazetteer.resolve(name, G)
+        if entry is None:
+            unresolved.append(name)
+            click.echo(f"NOT RESOLVED   {'':>8}  {name}   (runs: {', '.join(uses)})")
+            continue
+        source_counts[entry.source] = source_counts.get(entry.source, 0) + 1
+        bad = entry.snap_distance_m > max_snap
+        if bad:
+            over_snap.append(name)
+        if problems_only and not bad:
+            continue
+        marker = f"  SNAP>{max_snap:.0f}" if bad else ""
+        click.echo(
+            f"{entry.source:>13}  {entry.snap_distance_m:6.1f}m  {name}{marker}"
+            + (f"   (runs: {', '.join(uses)})" if bad else "")
+        )
+
+    click.echo(f"\n{'='*60}")
+    click.echo(f"Endpoints: {len(endpoints)} distinct")
+    for source, count in sorted(source_counts.items(), key=lambda kv: -kv[1]):
+        click.echo(f"  resolved via {source:>13}: {count}")
+    click.echo(f"  snap > {max_snap:.0f}m: {len(over_snap)}")
+    click.echo(f"  NOT RESOLVED: {len(unresolved)}")
+    for name in unresolved:
+        click.echo(f"    {name}")
+
+
+# ---------------------------------------------------------------------------
 # osm-pois  (Quick Win 8 — harvest gazetteer seed data from OSM)
 # ---------------------------------------------------------------------------
 
@@ -526,6 +597,29 @@ def _validate_outputs(constants, expected=320):
     pois = json.loads(kp.read_text()) if kp.exists() else []
     if not pois:
         problems.append("knowledge_pois.json empty or missing")
+
+    # The QA report must be from the current pipeline, not a stale merge: a
+    # record without "status" predates the usability gate, and a missing/zero
+    # osm_pois provenance means the tier-3 gazetteer was absent for the build
+    # (station endpoints silently degraded to the network geocoder).
+    qa_path = constants / "qa_report.json"
+    qa_data = json.loads(qa_path.read_text()) if qa_path.exists() else {}
+    statusless = sorted(
+        int(k) for k, v in qa_data.items()
+        if str(k).lstrip("-").isdigit()
+        and (not isinstance(v, dict) or "status" not in v)
+    )
+    if statusless:
+        problems.append(
+            f"{len(statusless)} QA record(s) lack 'status' (stale schema): "
+            f"{statusless[:10]}" + (" ..." if len(statusless) > 10 else "")
+        )
+    provenance = qa_data.get("_provenance") or {}
+    if not provenance.get("osm_pois"):
+        problems.append(
+            "qa_report.json _provenance.osm_pois is 0/missing — the OSM "
+            "gazetteer tier was not loaded for this build"
+        )
     return problems, len(present), len(pois)
 
 

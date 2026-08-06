@@ -114,7 +114,14 @@ def fingerprint_run(qa_entry: dict[str, Any]) -> RunFingerprint:
 
 def summarise(report_path: Path = DEFAULT_REPORT_PATH) -> Snapshot:
     data = json.loads(Path(report_path).read_text())
-    runs = {str(k): fingerprint_run(v) for k, v in data.items()}
+    # Per-run records are keyed by stringified run ids; the report also carries
+    # meta blocks (_provenance, _completeness) that must not be fingerprinted
+    # into the baseline. Same filter `krg qa` applies.
+    runs = {
+        str(k): fingerprint_run(v)
+        for k, v in data.items()
+        if str(k).lstrip("-").isdigit()
+    }
     passed = sum(1 for v in runs.values() if v.passed)
     preflight_fails = sum(1 for v in runs.values() if not v.preflight_ok)
     directness_fails = sum(

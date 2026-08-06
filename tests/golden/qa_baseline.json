@@ -1,0 +1,3209 @@
+{
+  "directness_fails": 41,
+  "legality_fails": 60,
+  "passed": 227,
+  "preflight_fails": 0,
+  "runs": {
+    "1": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.216,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "10": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.471,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "100": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.333,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "101": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.006,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "102": {
+      "is_direct": false,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.742,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "103": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.48,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "104": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.327,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "105": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.439,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "106": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.443,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "107": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.194,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "108": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.36,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "109": {
+      "is_direct": false,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.076,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "11": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.529,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "110": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.46,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "111": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.34,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "112": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.398,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "113": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.306,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "114": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.446,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "115": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.468,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "116": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.372,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "117": {
+      "is_direct": false,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.978,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "118": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.13,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "119": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.559,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "12": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.366,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "120": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.267,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "121": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.228,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "122": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.417,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "123": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.733,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "124": {
+      "is_direct": false,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.312,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "125": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.748,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "126": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.367,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "127": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.241,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "128": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.123,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "129": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.41,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "13": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.447,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "130": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.399,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "131": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.367,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "132": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.216,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "133": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.195,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "134": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.213,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "135": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.328,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "136": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.421,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "137": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.397,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "138": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.51,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "139": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.387,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "14": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.565,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "140": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.529,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "141": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.323,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "142": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.627,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "143": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.232,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "144": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.705,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "145": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.339,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "146": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.352,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "147": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.035,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "148": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.485,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "149": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.304,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "15": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.348,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "150": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.511,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "151": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.185,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "152": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.424,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "153": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.388,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "154": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.386,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "155": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.448,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "156": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.139,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "157": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.383,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "158": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.163,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "159": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.22,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "16": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.576,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "160": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.225,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "161": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.443,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "162": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.353,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "163": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.451,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "164": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.491,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "165": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.205,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "166": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.334,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "167": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.388,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "168": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.533,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "169": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.552,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "17": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.262,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "170": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.375,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "171": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.446,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "172": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.155,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "173": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.702,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "174": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.546,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "175": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.19,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "176": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.612,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "177": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.522,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "178": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.538,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "179": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.406,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "18": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.499,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "180": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.181,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "181": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.297,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "182": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.564,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "183": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.26,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "184": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.45,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "185": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.376,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "186": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.344,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "187": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.941,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "188": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.898,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "189": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.741,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "19": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.253,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "190": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.331,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "191": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.323,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "192": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.414,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "193": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.204,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "194": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.316,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "195": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.335,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "196": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.277,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "197": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.373,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "198": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.783,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "199": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.694,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "2": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.36,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "20": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.415,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "200": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.755,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "201": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.459,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "202": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.228,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "203": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.231,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "204": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.364,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "205": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.311,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "206": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.182,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "207": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.38,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "208": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.574,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "209": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.264,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "21": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.705,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "210": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.234,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "211": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.438,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "212": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.252,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "213": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.402,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "214": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.394,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "215": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.322,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "216": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.344,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "217": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.333,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "218": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.263,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "219": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.162,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "22": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.241,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "220": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.221,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "221": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.705,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "222": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.432,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "223": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.264,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "224": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.295,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "225": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.484,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "226": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.204,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "227": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.44,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "228": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.35,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "229": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.411,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "23": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.809,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "230": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.129,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "231": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.394,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "232": {
+      "is_direct": false,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.54,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "233": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.218,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "234": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.262,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "235": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.503,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "236": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.211,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "237": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.417,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "238": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.149,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "239": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.276,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "24": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.577,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "240": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.889,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "241": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.152,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "242": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.349,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "243": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.459,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "244": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.351,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "245": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.378,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "246": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.284,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "247": {
+      "is_direct": false,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 2.887,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "248": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.139,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "249": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.323,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "25": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.281,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "250": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.749,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "251": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.482,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "252": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.695,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "253": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.163,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "254": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.227,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "255": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.279,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "256": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.325,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "257": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.339,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "258": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.662,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "259": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.402,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "26": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.258,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "260": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.479,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "261": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.214,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "262": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.361,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "263": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.249,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "264": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.445,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "265": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.068,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "266": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.294,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "267": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.217,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "268": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.219,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "269": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.397,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "27": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.485,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "270": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.334,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "271": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.392,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "272": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.282,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "273": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.306,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "274": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.29,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "275": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.265,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "276": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.239,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "277": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.36,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "278": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.204,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "279": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.603,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "28": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.59,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "280": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.248,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "281": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.17,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "282": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.371,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "283": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.212,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "284": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.928,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "285": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.158,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "286": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.281,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "287": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.182,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "288": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.206,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "289": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.299,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "29": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.352,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "290": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.381,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "291": {
+      "is_direct": false,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.897,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "292": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.565,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "293": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.303,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "294": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.077,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "295": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.416,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "296": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.332,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "297": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.529,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "298": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.374,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "299": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.398,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "3": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.631,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "30": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.4,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "300": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.564,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "301": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.382,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "302": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.506,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "303": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.209,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "304": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.277,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "305": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.402,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "306": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.311,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "307": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.321,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "308": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.22,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "309": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.329,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "31": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.353,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "310": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.324,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "311": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.26,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "312": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.316,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "313": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.322,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "314": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.317,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "315": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.263,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "316": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.278,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "317": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.252,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "318": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.374,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "319": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.675,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "32": {
+      "is_direct": false,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.925,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "320": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.639,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "33": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.13,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "34": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.543,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "35": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.3,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "36": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.132,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "37": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.522,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "38": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.374,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "39": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.283,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "4": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.348,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "40": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.263,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "41": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.628,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "42": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.255,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "43": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.44,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "44": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.241,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "45": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.322,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "46": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.415,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "47": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.434,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "48": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.405,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "49": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.962,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "5": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.564,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "50": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.823,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "51": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.923,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "52": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.463,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "53": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.207,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "54": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.458,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "55": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.28,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "56": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 3.165,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "57": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.438,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "58": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.307,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "59": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.68,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "6": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.373,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "60": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.116,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "61": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.532,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "62": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.274,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "63": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.333,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "64": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.391,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "65": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.563,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "66": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.437,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "67": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.519,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "68": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.452,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "69": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.343,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "7": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.1,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "70": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.231,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "71": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.242,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "72": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.352,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "73": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.617,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "74": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.325,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "75": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.374,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "76": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.237,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "77": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.146,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "78": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.47,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "79": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.383,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "8": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.297,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "80": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.353,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "81": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.211,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "82": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.663,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "83": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.259,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "84": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.333,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "85": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.188,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "86": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.258,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "87": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.553,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "88": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.484,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "89": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.402,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "9": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.394,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "90": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.354,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "91": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.335,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "92": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.292,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "93": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.902,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "94": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.214,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "95": {
+      "is_direct": true,
+      "legal": false,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.534,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "96": {
+      "is_direct": false,
+      "legal": true,
+      "node_count": 0,
+      "passed": false,
+      "preflight_ok": true,
+      "ratio": 1.72,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "97": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.295,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "98": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.306,
+      "route_hash": "",
+      "total_distance_m": null
+    },
+    "99": {
+      "is_direct": true,
+      "legal": true,
+      "node_count": 0,
+      "passed": true,
+      "preflight_ok": true,
+      "ratio": 1.426,
+      "route_hash": "",
+      "total_distance_m": null
+    }
+  },
+  "total": 320
+}
