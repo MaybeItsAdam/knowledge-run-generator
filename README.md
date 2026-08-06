@@ -32,7 +32,27 @@ Subcommands:
 | `krg qa` | Summarise the most recent `qa_report.json`. |
 | `krg diagnose RUN_ID` | Walk a run's node sequence edge-by-edge to triage routing artefacts. |
 | `krg osm-pois` | Harvest a gazetteer-ready POI dict from OpenStreetMap. |
-| `krg regression snapshot` / `regression diff` | Freeze and compare QA baselines. |
+| `krg audit-endpoints` | Resolve every Blue Book run endpoint like preflight does and triage tier/snap distance. |
+| `krg regression snapshot` / `regression diff` | Freeze and compare QA baselines (`tests/golden/qa_baseline.json`). |
+
+## Current data-quality state (2026-08)
+
+All 320 runs build with zero preflight failures, zero endpoint snap breaches,
+and zero structural invalids; 227/320 pass full validation. The remaining
+failures are router-level legality (60) and directness (41) — endpoint/street
+resolution is no longer the bottleneck. Resolution is driven by curated data
+files in `knowledge_run_generator/blue_book_demo/`: `poi_overrides.json`
+(endpoints), `street_spelling_fixes.json` (Blue Book typos),
+`junction_definitions.json` (junction/gyratory names → constituent streets,
+indexed by `knowledge_run_generator/junctions.py`). Fix data there, not in
+consumer code. `qa_report.json` is schema-versioned
+(`_provenance.qa_schema_version`); resumes drop and re-route any run whose QA
+record predates the current schema.
+
+Requires Python ≥ 3.10. Expensive caches (graph, street/alias indexes, paid
+geocoding results) live in `~/.cache/knowledge-run-generator` (override with
+`KRG_CACHE_DIR`); anything found in the legacy `/tmp/app_cache` is migrated
+across automatically on first access.
 
 ### `krg web`
 
@@ -285,11 +305,13 @@ Requirements for a full rebuild:
   `EXPO_PUBLIC_MAPBOX_PK` in the environment, or `--env-file`.
 - **Points List PDF**: defaults to `knowledge-of-london-points-list.pdf` at the
   repo root; override with `--pdf`.
-- **Borough enrichment reference data** (optional):
-  `constants/london_boroughs.geojson` and `constants/yellow_badge_sectors.json`.
-  These are inputs the repo does not ship — when absent, enrichment is skipped
-  with a message and the rest of the build still completes. Pass `--no-enrich`
-  to skip it silently.
+- **Borough enrichment reference data**:
+  `constants/london_boroughs.geojson` and `constants/yellow_badge_sectors.json`
+  are committed inputs (un-ignored from `constants/`), as is the OSM harvest
+  snapshot `constants/osm_pois.json` — a fresh clone reproduces enrichment and
+  tier-3 endpoint resolution without network access. Refresh the harvest
+  deliberately with `krg osm-pois --force`. Pass `--no-enrich` to skip
+  enrichment silently.
 - `krg generate` shells out to `scripts/`, so it needs the repo checkout
   (`pip install -e .`), not a plain wheel install.
 
@@ -328,7 +350,7 @@ Options:
 python scripts/strict_route_demo.py --limit 5
 ```
 
-It reads origin/destination coordinates from the existing `constants/runPoints.json` (so you don't have to re-geocode and hit Nominatim's 1 req/s rate limit), reads street sequences from `The Blue Book Runs of the Knowledge of London.txt`, and overwrites `constants/runPoints.json` with the rebuilt runs.
+It reads origin/destination coordinates from the existing `constants/runPoints.json` (so you don't have to re-geocode and hit Nominatim's 1 req/s rate limit), reads street sequences from `The Blue Book Runs of the Knowledge of London.txt`, and writes `constants/runPoints_strict_demo.json` — deliberately never the canonical `runPoints.json`.
 
 ### Files in the demo
 - `run_pipeline.py` — the discount-based orchestrator (used by `krg bluebookdemo`).

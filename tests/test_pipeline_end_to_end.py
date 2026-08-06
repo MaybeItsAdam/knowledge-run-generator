@@ -11,6 +11,7 @@ from the fixture data is a test failure, not a silent network call.
 """
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,15 +49,28 @@ class PipelineEndToEndTests(unittest.TestCase):
             "load_graph": rp.load_graph,
             "load_turn_restrictions": rp.load_turn_restrictions,
             "geocode_and_snap": rp.geocode_and_snap,
+            "load_cached_pois": rp.load_cached_pois,
         }
         rp.load_graph = lambda network_type=None, **kw: self.graph
         rp.load_turn_restrictions = lambda G, cache_dir=None: set()
         rp.geocode_and_snap = self._offline_only_resolve
+        # The real constants/osm_pois.json must not leak into the fixture
+        # graph: its real-London coordinates are kilometres from the synthetic
+        # geometry and would hijack the street-tier resolution this test
+        # exercises. Emptying the harvest triggers the pipeline's empty-OSM
+        # guard, so opt out of it explicitly rather than weakening the check.
+        rp.load_cached_pois = lambda *candidates: {}
+        self._old_allow_no_osm = os.environ.get("KRG_ALLOW_NO_OSM")
+        os.environ["KRG_ALLOW_NO_OSM"] = "1"
         self.geocoder_calls = []
 
     def tearDown(self):
         for name, original in self._patched.items():
             setattr(rp, name, original)
+        if self._old_allow_no_osm is None:
+            os.environ.pop("KRG_ALLOW_NO_OSM", None)
+        else:
+            os.environ["KRG_ALLOW_NO_OSM"] = self._old_allow_no_osm
         self._tmp.cleanup()
 
     def _offline_only_resolve(self, address, G, poi_overrides=None, gazetteer=None):
