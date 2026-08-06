@@ -8,11 +8,12 @@ from pathlib import Path
 from shapely.geometry import Point, LineString
 
 from .aliases import normalise as _normalise_street_name
+from .cache import cache_dir, cache_path
 
-CACHE_DIR = Path("/tmp/app_cache")
+CACHE_DIR = cache_dir()
 GRAPH_FILENAME_TEMPLATE = "london_{network_type}_v3.graphml"
 
-ox.settings.cache_folder = "/tmp/ox_cache"
+ox.settings.cache_folder = str(cache_dir() / "ox_cache")
 
 SERVICE_HIGHWAYS = {
     "service",
@@ -89,9 +90,8 @@ def load_graph(place_name="Greater London, UK", network_type=None):
     Load the street network graph for the given place name.
     """
     resolved_network_type = network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive")
-    CACHE_DIR.mkdir(exist_ok=True)
     safe_network_type = str(resolved_network_type).replace("/", "_").replace(" ", "_")
-    graph_path = CACHE_DIR / GRAPH_FILENAME_TEMPLATE.format(network_type=safe_network_type)
+    graph_path = cache_path(GRAPH_FILENAME_TEMPLATE.format(network_type=safe_network_type))
 
     if graph_path.exists():
         print(f"Loading graph from cache: {graph_path}")

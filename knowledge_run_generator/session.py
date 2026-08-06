@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from .aliases import AliasIndex, load_or_build_alias_index
+from .cache import cache_dir as krg_cache_dir
 from .caller import generate_call
 from .gazetteer import Gazetteer, load_knowledge_pois, preflight_run
 from .geocoder import geocode_and_snap
@@ -88,8 +89,9 @@ class Session:
         the richer ``{"lat":..., "lon":..., "on_street":..., "approach_from":...}``
         form.
     cache_dir
-        Where to keep derived indexes (alias pickle, etc.). Defaults to
-        ``/tmp/app_cache``.
+        Where to keep derived indexes (alias pickle, etc.). Defaults to the
+        shared persistent cache (``KRG_CACHE_DIR`` or
+        ``~/.cache/knowledge-run-generator``).
     knowledge_pois_file
         Geocoded Knowledge Points List to resolve place names against.
         Defaults to the generator's ``constants/knowledge_pois.json`` if it
@@ -100,12 +102,12 @@ class Session:
         self,
         graph=None,
         poi_overrides: dict | str | Path | None = None,
-        cache_dir: str | Path = "/tmp/app_cache",
+        cache_dir: str | Path | None = None,
         build_indexes: bool = True,
         use_osm_pois: bool = True,
         knowledge_pois_file: str | Path | None = None,
     ):
-        self._cache_dir = Path(cache_dir)
+        self._cache_dir = Path(cache_dir) if cache_dir is not None else krg_cache_dir()
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._graph = graph
         self._alias_index: AliasIndex | None = None
