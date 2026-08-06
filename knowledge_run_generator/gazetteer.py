@@ -88,6 +88,14 @@ def _station_stems(name: str) -> list[str]:
         stems.append(" ".join(tokens[1:]))
     return stems
 
+# A point-tier record whose snap is worse than this, for a name that is
+# *exactly* a street in the graph, is almost always a rooftop geocode somewhere
+# along that street (the Points List geocodes "YORK WAY N1" to a building).
+# Beyond it we prefer the street tier, whose snap is 0 by construction.
+# Matches preflight's ``max_snap_m`` — the point past which the record would
+# fail the run anyway.
+_STREET_FALLBACK_SNAP_M = 50.0
+
 # Highway classes we avoid snapping to when a better option exists. Dual
 # carriageways and slip roads are the sources of the "wrong side" bug.
 _AVOID_HIGHWAY_CLASSES = {
@@ -126,13 +134,26 @@ def _edge_highway_class(edge_data: dict) -> str:
     return str(hwy or "")
 
 
-def _node_has_drive_edge(G, node: int) -> bool:
-    """True if *node* is touched by at least one non-avoided drivable edge."""
+def _node_is_routable(G, node: int) -> bool:
+    """True if *node* can be both entered and left via non-avoided drivable
+    edges.
+
+    Touching one drivable edge is not enough: a node at the upstream tip of a
+    one-way (0 in-edges) can never be *arrived at*, and a sink node (0
+    out-edges) strands the reverse leg — Run 48's reverse route died on a
+    Lime Street sink node, and Runs 43/253 ended hundreds of metres short of
+    source-only end nodes. Requiring both directions keeps the snap on nodes
+    a route can actually terminate at and depart from.
+    """
     try:
-        for _, _, data in G.edges(node, data=True):
+        has_out = False
+        for _, _, data in G.out_edges(node, data=True):
             klass = _edge_highway_class(data)
             if klass and klass not in _AVOID_HIGHWAY_CLASSES:
-                return True
+                has_out = True
+                break
+        if not has_out:
+            return False
         for _, _, data in G.in_edges(node, data=True):
             klass = _edge_highway_class(data)
             if klass and klass not in _AVOID_HIGHWAY_CLASSES:
@@ -454,6 +475,23 @@ class Gazetteer:
             alias_index=self.alias_index,
         )
 
+        # Street-name endpoints hijacked by a point tier: "YORK WAY N1" hits
+        # the Points List's rooftop geocode before the street tier ever runs,
+        # and the rooftop snaps 50m+ from the kerb. When the snap is that bad
+        # and the name *is* a street (exact match only — no word-dropping, so
+        # "KINGS CROSS STATION" can't collapse onto "KINGS CROSS"), the street
+        # tier's answer is strictly better. ``on_street`` hints opt out: a
+        # curated record knows where it wants to snap.
+        if snap_m > _STREET_FALLBACK_SNAP_M and not on_street and self.alias_index is not None:
+            stem, _postcode = _split_postcode(self._follow_aliases(address))
+            norm = _normalise_name(stem)
+            if (norm in self.alias_index.canonical_to_nodes
+                    or norm in self.alias_index.alias_to_canonical):
+                street_entry = self._resolve_street(address, G)
+                if street_entry is not None:
+                    self._resolve_cache[cache_key] = street_entry
+                    return street_entry
+
         approach_node: int | None = None
         if approach_from and self.alias_index is not None:
             approach_candidates = self.alias_index.nodes_for(approach_from)
@@ -526,6 +564,10 @@ class Gazetteer:
         nodes = [n for n in self.alias_index.nodes_for(stem) if n in G.nodes]
         if not nodes:
             return None
+        # Same routability rule as semantic_snap: never anchor an endpoint on
+        # a node the router can only enter or only leave.
+        routable = [n for n in nodes if _node_is_routable(G, n)]
+        nodes = routable or nodes
 
         anchor = self._district_centroid(postcode)
         if anchor is not None:
@@ -609,7 +651,10 @@ def semantic_snap(
     if on_street and alias_index is not None:
         nodes = alias_index.nodes_for(on_street)
         if nodes:
-            best = _closest_node(G, lat, lon, nodes)
+            # Prefer nodes a route can terminate at and depart from; a street's
+            # one-way tip is as much of a trap here as in the radius search.
+            routable = [n for n in nodes if n in G.nodes and _node_is_routable(G, n)]
+            best = _closest_node(G, lat, lon, routable or nodes)
             if best is not None:
                 n = G.nodes[best]
                 d = _haversine(lat, lon, n["y"], n["x"])
@@ -631,7 +676,7 @@ def semantic_snap(
         d = dist_rad * 6_371_000
         if d > max_drivable_radius_m:
             break
-        if _node_has_drive_edge(G, nid):
+        if _node_is_routable(G, nid):
             best_id = nid
             best_d = d
             break
@@ -706,6 +751,7 @@ def preflight_run(
     alias_index: AliasIndex | None,
     max_snap_m: float = 50.0,
     warn_snap_m: float = 20.0,
+    known_junctions: set | None = None,
 ) -> PreflightReport:
     """
     Sanity-check a run *before* we spend time routing it.
@@ -755,7 +801,13 @@ def preflight_run(
             )
 
     if alias_index is not None and intermediate_streets:
-        unresolved = [s for s in intermediate_streets if alias_index.resolve(s) is None]
+        # Junction names resolved by the curated junction index count as
+        # resolved here too, so preflight agrees with the waypoint builder.
+        unresolved = [
+            s for s in intermediate_streets
+            if alias_index.resolve(s) is None
+            and _normalise_name(s) not in (known_junctions or ())
+        ]
         report.unresolved_streets = unresolved
         if unresolved:
             report.warnings.append(

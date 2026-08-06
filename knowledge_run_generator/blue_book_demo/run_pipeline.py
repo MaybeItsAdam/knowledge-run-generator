@@ -37,8 +37,17 @@ from knowledge_run_generator.aliases import (
 from knowledge_run_generator.gazetteer import (
     DEFAULT_KNOWLEDGE_POIS_PATH, Gazetteer, load_knowledge_pois, preflight_run,
 )
+from knowledge_run_generator.cache import cache_dir as krg_cache_dir
+from knowledge_run_generator.junctions import build_junction_index
 from knowledge_run_generator.osm_pois import load_cached_pois
 from knowledge_run_generator import caller
+
+
+# Version stamp for qa_report.json, written into ``_provenance``. Bump whenever
+# the per-run record schema changes shape (e.g. when "status" was introduced)
+# so a resume can tell a current record from one written by older code and
+# re-route the run instead of carrying the stale record forward.
+QA_SCHEMA_VERSION = 2
 
 
 def _json_default(o):
@@ -66,6 +75,37 @@ def _save_runs(output_file, runs_data):
         json.dump(ordered, f, indent=2, default=_json_default)
 
 
+def _partition_resumable_qa(existing_qa):
+    """Split an existing qa_report dict into ``(carry_forward, stale_run_ids)``.
+
+    A per-run record may only be carried across a resume when it is
+    trustworthy: it must carry the ``"status"`` field (older reports predate
+    it) and the report must have been written by the current
+    :data:`QA_SCHEMA_VERSION`. Anything else is stale — the run has to be
+    re-routed, not silently resumed past.
+
+    Meta keys (``_provenance``, ``_completeness``) are regenerated at save
+    time and are never treated as run records.
+    """
+    version = None
+    provenance = existing_qa.get("_provenance")
+    if isinstance(provenance, dict):
+        version = provenance.get("qa_schema_version")
+
+    carry = {}
+    stale_ids = set()
+    for key, value in existing_qa.items():
+        if not str(key).lstrip("-").isdigit():
+            continue
+        if (version == QA_SCHEMA_VERSION
+                and isinstance(value, dict)
+                and "status" in value):
+            carry[key] = value
+        else:
+            stale_ids.add(int(key))
+    return carry, stale_ids
+
+
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
@@ -78,6 +118,49 @@ def parse_run_line(line):
     return None
 
 
+# Trailing set-down/annotation markers on a street line. Mirrors
+# scripts/strict_route_demo.py: SDOL/SDOR (set down on left/right), FACING,
+# and "<name> ON LEFT / ON RIGHT / ON LEFT & RIGHT" arrival notes.
+_END_MARKERS = re.compile(
+    r"\s+(SDOL|SDOR|FACING|ON LEFT.*|ON RIGHT.*|ON LEFT & RIGHT.*)$"
+)
+
+# "MANOR HOUSE STATION N4" -> stem "MANOR HOUSE STATION" (postcode dropped),
+# used to peel the destination name off the final street line.
+_POSTCODE_RE = re.compile(r"\s+[A-Z]{1,2}\d{1,2}[A-Z]?\s*[.,]?\s*$")
+
+
+def _clean_street_line(raw_street, destination=None):
+    """Reduce a Blue Book street line to the street name itself.
+
+    Strips trailing arrival annotations (``... FACING``, ``... SDOL/SDOR``,
+    ``... <NAME> ON LEFT/ON RIGHT``), then — because the final line of a run
+    reads "<street> <destination> FACING/ON LEFT" — peels the run's
+    destination name off the tail if it is still there. Finally drops a
+    leading "CROSS " verb ("CROSS FULHAM ROAD" names Fulham Road, not a
+    street called Cross), guarded so a street actually *named* "Cross
+    Something" single-word remainder is left alone.
+    """
+    street = _END_MARKERS.sub("", raw_street).strip(" ._\n\r\t")
+    if not street:
+        return ""
+
+    # "FACING" may be mid-token when the annotation carried extra words the
+    # regex anchored off; the legacy split is kept as a belt-and-braces pass.
+    street = street.split("FACING")[0].strip(" ._\n\r\t")
+
+    if destination:
+        dest_stem = _POSTCODE_RE.sub("", destination.upper()).strip()
+        upper = street.upper()
+        if dest_stem and upper != dest_stem and upper.endswith(" " + dest_stem):
+            street = street[: -(len(dest_stem) + 1)].strip(" ._\n\r\t")
+
+    if street.upper().startswith("CROSS ") and len(street.split()) >= 3:
+        street = street[6:].strip()
+
+    return street
+
+
 def parse_intermediary_file(path):
     """
     Read ``blue-book-runs-intermediatery.txt`` and return:
@@ -87,6 +170,7 @@ def parse_intermediary_file(path):
     intermediary_runs = {}
     run_titles = {}
     current_id = None
+    spelling_fixes = load_street_spelling_fixes()
 
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -99,11 +183,10 @@ def parse_intermediary_file(path):
             elif current_id and line and not line.startswith("RUN"):
                 parts = re.split(r"_{2,}", line)
                 if len(parts) > 1:
-                    raw_street = parts[1]
-                    street_name = raw_street.split("FACING")[0].strip(" ._\n\r\t")
-
-                    if street_name.endswith(" SDOL"):
-                        street_name = street_name[:-5].strip()
+                    street_name = _clean_street_line(
+                        parts[1], destination=run_titles[current_id][1]
+                    )
+                    street_name = spelling_fixes.get(street_name.upper(), street_name)
 
                     terminal_roads = {"DEPARTURES ROAD", "CAB ROAD", "ARRIVALS ROAD"}
                     if (street_name
@@ -112,6 +195,32 @@ def parse_intermediary_file(path):
                         intermediary_runs[current_id].append(street_name)
 
     return run_titles, intermediary_runs
+
+
+_spelling_fixes_cache = None
+
+
+def load_street_spelling_fixes(path=None):
+    """Blue Book typo → correct street name map (upper-cased keys).
+
+    Curated in ``street_spelling_fixes.json`` next to the run text. Applied
+    at parse time so the preflight check, the waypoint builder and the
+    coverage metric all see the same corrected names.
+    """
+    global _spelling_fixes_cache
+    if path is None and _spelling_fixes_cache is not None:
+        return _spelling_fixes_cache
+    fixes_path = Path(path) if path else DEMO_DIR / "street_spelling_fixes.json"
+    fixes = {}
+    if fixes_path.exists():
+        try:
+            raw = json.loads(fixes_path.read_text())
+            fixes = {str(k).upper(): str(v) for k, v in raw.items()}
+        except Exception as exc:
+            print(f"Warning: could not load street spelling fixes: {exc}")
+    if path is None:
+        _spelling_fixes_cache = fixes
+    return fixes
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +296,16 @@ _JUNCTION_SUFFIXES = [
 def get_best_street_match(raw_name, street_to_nodes):
     """Find the best match for *raw_name* in the street index."""
     cleaned = raw_name.upper()
+    cleaned = load_street_spelling_fixes().get(cleaned, cleaned).upper()
+
+    # Full-name match first: junction definitions ("VAUXHALL CROSS", "BANK
+    # JUNCTION") and genuine full street names are keyed by their complete
+    # normalised form, and stripping the junction suffix below would reduce
+    # them to a different street entirely ("VAUXHALL", "BANK").
+    full = _normalise(cleaned)
+    if full in street_to_nodes:
+        return full
+
     for suffix in _JUNCTION_SUFFIXES:
         if cleaned.endswith(suffix):
             cleaned = cleaned[: -len(suffix)].strip()
@@ -198,18 +317,26 @@ def get_best_street_match(raw_name, street_to_nodes):
 
     # Expand abbreviations (in-string)
     expanded = base
-    for abbr, full in _ABBREVIATIONS.items():
+    for abbr, full_form in _ABBREVIATIONS.items():
         if abbr in expanded:
-            expanded = expanded.replace(abbr, full)
+            expanded = expanded.replace(abbr, full_form)
     if expanded != base and expanded in street_to_nodes:
         return expanded
 
     # Expand abbreviations (suffix-only)
-    for abbr, full in _ABBREVIATIONS.items():
+    for abbr, full_form in _ABBREVIATIONS.items():
         if base.endswith(abbr):
-            candidate = base[: -len(abbr)] + full
+            candidate = base[: -len(abbr)] + full_form
             if candidate in street_to_nodes:
                 return candidate
+
+    # Guarded fuzzy last-chance: a single close spelling for a reasonably
+    # long name (edit distance <= 2) is almost always the Blue Book typo we
+    # haven't curated yet. Runs *before* progressive word removal because
+    # word removal can only make the match less specific.
+    fuzzy = _fuzzy_street_match(full, street_to_nodes)
+    if fuzzy is not None:
+        return fuzzy
 
     # Progressive word removal
     words = cleaned.split()
@@ -220,6 +347,42 @@ def get_best_street_match(raw_name, street_to_nodes):
         words.pop()
 
     return base
+
+
+# Fuzzy matches are cached per name: difflib over ~36k index keys is too slow
+# to repeat for every street pair of every run.
+_fuzzy_cache = {}
+
+
+def _fuzzy_street_match(norm_name, street_to_nodes):
+    """Return the index key within edit distance 2 of *norm_name*, but only
+    when the name is >= 8 chars and exactly one candidate qualifies."""
+    if len(norm_name) < 8:
+        return None
+    if norm_name in _fuzzy_cache:
+        return _fuzzy_cache[norm_name]
+
+    import difflib
+
+    close = difflib.get_close_matches(norm_name, street_to_nodes.keys(), n=3, cutoff=0.85)
+
+    def edit_distance(a, b):
+        if abs(len(a) - len(b)) > 2:
+            return 3
+        prev = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            curr = [i]
+            for j, cb in enumerate(b, 1):
+                curr.append(min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + (ca != cb)))
+            if min(curr) > 2:
+                return 3
+            prev = curr
+        return prev[-1]
+
+    candidates = [c for c in close if edit_distance(norm_name, c) <= 2]
+    result = candidates[0] if len(candidates) == 1 else None
+    _fuzzy_cache[norm_name] = result
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -462,8 +625,30 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         try:
             existing_qa = json.loads(qa_path.read_text())
             if isinstance(existing_qa, dict):
-                qa_results.update(existing_qa)
-                print(f"Loaded {len(existing_qa)} existing QA records from {qa_path}")
+                carry, stale_ids = _partition_resumable_qa(existing_qa)
+                if select_ids is not None:
+                    # A subset invocation only visits the selected ids, so
+                    # invalidating anything else would drop those runs from
+                    # runPoints.json without ever regenerating them. Selected
+                    # ids are force-regenerated below regardless; keep the
+                    # rest as-is and let the next full resume clean them up.
+                    for rid in stale_ids - select_ids:
+                        entry = existing_qa.get(str(rid))
+                        if isinstance(entry, dict):
+                            carry[str(rid)] = entry
+                    stale_ids &= select_ids
+                qa_results.update(carry)
+                print(f"Loaded {len(carry)} existing QA records from {qa_path}")
+                dropped = processed_ids & stale_ids
+                if dropped:
+                    # Stale-shaped records (no "status", or an older schema
+                    # version) can't be trusted; re-route their runs rather
+                    # than resuming past them with a stale verdict.
+                    runs_data = [r for r in runs_data if r["id"] not in dropped]
+                    processed_ids -= dropped
+                    preview = sorted(dropped)[:10]
+                    print(f"Invalidated {len(dropped)} stale QA record(s); "
+                          f"re-routing {preview}{'...' if len(dropped) > 10 else ''}")
         except (json.JSONDecodeError, OSError) as exc:
             print(f"Warning: could not read existing QA report: {exc}")
 
@@ -490,8 +675,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     G = load_graph(network_type=network_type)
 
     # Street index. cache_dir is a parameter so tests (and parallel builds)
-    # can keep their derived indexes out of the shared /tmp location.
-    cache_dir = Path(cache_dir) if cache_dir else Path("/tmp/app_cache")
+    # can keep their derived indexes out of the shared location.
+    cache_dir = Path(cache_dir) if cache_dir else krg_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
     street_to_nodes = build_street_index(G, cache_dir)
     print(f"Indexed {len(street_to_nodes)} street names.")
@@ -521,6 +706,16 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     print(f"  {len(alias_index.canonical_to_nodes)} canonical streets, "
           f"{len(alias_index.alias_to_canonical)} aliases.")
 
+    # Junction/gyratory names (VAUXHALL CROSS, BANK JUNCTION, ...) resolved to
+    # the nodes where their constituent streets meet. Merged into the street
+    # index (in memory only — the on-disk cache stays pure graph data) so
+    # get_best_street_match hits them before its word-removal fallback.
+    junction_index = build_junction_index(alias_index, G=G)
+    for junction_name, junction_nodes in junction_index.items():
+        street_to_nodes.setdefault(junction_name, set()).update(junction_nodes)
+    known_junctions = set(junction_index)
+    print(f"  {len(junction_index)} junction definitions resolved to graph nodes.")
+
     # Optional OSM POI harvest (Quick Win 8): if the cache exists we fold it
     # into the gazetteer as a second-chance lookup behind the curated
     # overrides. Populate it with `krg osm-pois`; we never auto-fetch here.
@@ -530,9 +725,12 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         PROJECT_ROOT / "constants" / "osm_pois.json",
         cache_dir / "osm_pois.json",
     )
-    if not osm_pois:
-        print("  No OSM POI harvest found — run `krg osm-pois` so station "
-              "endpoints resolve without the geocoder.")
+    if not osm_pois and not os.environ.get("KRG_ALLOW_NO_OSM"):
+        raise RuntimeError(
+            "No OSM POI harvest found — the tier-3 gazetteer would be empty and "
+            "station/hospital endpoints would silently fall through to Nominatim. "
+            "Run `krg osm-pois` first (or set KRG_ALLOW_NO_OSM=1 to proceed anyway)."
+        )
 
     # Geocoded Knowledge Points List (from `krg generate pois`). Most Blue Book
     # run endpoints are Points List entries, so this is what keeps the pipeline
@@ -615,6 +813,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         pre = preflight_run(
             start_entry, end_entry,
             intermediate_streets_raw, alias_index,
+            known_junctions=known_junctions,
         )
         if pre.warnings:
             for w in pre.warnings:
@@ -910,6 +1109,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     # Provenance: which graph produced this, so a change in the routes can be
     # attributed rather than guessed at.
     qa_results["_provenance"] = {
+        "qa_schema_version": QA_SCHEMA_VERSION,
         "generated_at": int(time.time()),
         "network_type": network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive"),
         "graph_nodes": G.number_of_nodes(),

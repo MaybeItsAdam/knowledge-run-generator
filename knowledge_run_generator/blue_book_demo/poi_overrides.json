@@ -1,21 +1,22 @@
 {
     "BARON'S COURT STATION W14": {
-        "lat": 51.4903477,
-        "lon": -0.2144055,
-        "on_street": "BARONS COURT ROAD"
+        "lat": 51.48998,
+        "lon": -0.21315,
+        "on_street": "PALLISER ROAD"
     },
-    "ROYAL OAK STATION W2": [
-        51.5191279,
-        -0.188624
-    ],
+    "ROYAL OAK STATION W2": {
+        "lat": 51.51958,
+        "lon": -0.18855,
+        "on_street": "HARROW ROAD"
+    },
     "BLACKFRIARS STATION EC4": {
-        "lat": 51.5104871,
-        "lon": -0.1032417,
+        "lat": 51.51183,
+        "lon": -0.10412,
         "on_street": "QUEEN VICTORIA STREET"
     },
     "BRYANSTON STREET W1": {
-        "lat": 51.5140828,
-        "lon": -0.1602144,
+        "lat": 51.51419,
+        "lon": -0.15933,
         "on_street": "BRYANSTON STREET"
     },
     "RITZ HOTEL SW1": [
@@ -26,14 +27,16 @@
         51.5074,
         -0.1419
     ],
-    "HURLINGHAM CLUB SW6": [
-        51.4678,
-        -0.2012
-    ],
-    "HURLINGHAM CLUB": [
-        51.4678,
-        -0.2012
-    ],
+    "HURLINGHAM CLUB SW6": {
+        "lat": 51.4678,
+        "lon": -0.19873,
+        "on_street": "BROOMHOUSE LANE"
+    },
+    "HURLINGHAM CLUB": {
+        "lat": 51.4678,
+        "lon": -0.19873,
+        "on_street": "BROOMHOUSE LANE"
+    },
     "BATTERSEA PARK STATION SW8": [
         51.4769,
         -0.1465
@@ -66,22 +69,24 @@
         51.4658,
         -0.0963
     ],
-    "CANNON WHARF BUSINESS CENTRE SE8": [
-        51.4783,
-        -0.0266
-    ],
-    "CANNON WHARF BUSINESS CENTRE": [
-        51.4783,
-        -0.0266
-    ],
-    "ROYAL FREE HOSPITAL NW3": [
-        51.5531,
-        -0.1656
-    ],
-    "ROYAL FREE HOSPITAL": [
-        51.5531,
-        -0.1656
-    ],
+    "CANNON WHARF BUSINESS CENTRE SE8": {
+        "lat": 51.4783,
+        "lon": -0.02744
+    },
+    "CANNON WHARF BUSINESS CENTRE": {
+        "lat": 51.4783,
+        "lon": -0.02744
+    },
+    "ROYAL FREE HOSPITAL NW3": {
+        "lat": 51.55406,
+        "lon": -0.16551,
+        "on_street": "POND STREET"
+    },
+    "ROYAL FREE HOSPITAL": {
+        "lat": 51.55406,
+        "lon": -0.16551,
+        "on_street": "POND STREET"
+    },
     "DALSTON KINGSLAND STATION E8": [
         51.5484,
         -0.0755
@@ -134,10 +139,10 @@
         51.5273,
         -0.1585
     ],
-    "CHARING CROSS HOSPITAL W6": [
-        51.4871,
-        -0.2195
-    ],
+    "CHARING CROSS HOSPITAL W6": {
+        "lat": 51.48743,
+        "lon": -0.21817
+    },
     "SUMNER STREET SE1": [
         51.5067,
         -0.0996
@@ -150,26 +155,23 @@
         51.4284,
         -0.0945
     ],
-    "ST GEORGE'S HOSPITAL SW17": [
-        51.4251,
-        -0.1749
-    ],
+    "ST GEORGE'S HOSPITAL SW17": {
+        "lat": 51.42464,
+        "lon": -0.17506
+    },
     "GOLDSMITH'S ROW E2": [
         51.5316,
         -0.066
     ],
-    "WOODSTOCK AVEUNE NW11": [
-        51.5737,
-        -0.2083
-    ],
+    "WOODSTOCK AVEUNE NW11": "WOODSTOCK AVENUE NW11",
     "WOODSTOCK AVENUE NW11": [
         51.5737,
         -0.2083
     ],
-    "SOUTH TOTTENHAM STATION N15": [
-        51.5802,
-        -0.072
-    ],
+    "SOUTH TOTTENHAM STATION N15": {
+        "lat": 51.58084,
+        "lon": -0.07222
+    },
     "HOLLOWAY ROAD STATION N7": [
         51.5528,
         -0.1129
@@ -178,10 +180,11 @@
         51.5491,
         -0.2477
     ],
-    "THE IMPERIAL WAR MUSEUM SE1": [
-        51.4958,
-        -0.1088
-    ],
+    "THE IMPERIAL WAR MUSEUM SE1": {
+        "lat": 51.49681,
+        "lon": -0.11,
+        "on_street": "LAMBETH ROAD"
+    },
     "IMPERIAL WAR MUSEUM SE1": [
         51.4958,
         -0.1088
@@ -222,22 +225,25 @@
         51.475,
         -0.2011
     ],
-    "THE MINISTRY OF DEFENCE SW1": [
-        51.504,
-        -0.1249
-    ],
-    "PALLADIUM THEATRE W1": [
-        51.5146,
-        -0.1405
-    ],
+    "THE MINISTRY OF DEFENCE SW1": {
+        "lat": 51.50401,
+        "lon": -0.12611,
+        "on_street": "WHITEHALL"
+    },
+    "PALLADIUM THEATRE W1": {
+        "lat": 51.51402,
+        "lon": -0.14022,
+        "on_street": "ARGYLL STREET"
+    },
     "ST JOHN'S WOOD HIGH STREET NW8": [
         51.5361,
         -0.175
     ],
-    "BRIXTON MARKET SW9": [
-        51.462,
-        -0.114
-    ],
+    "BRIXTON MARKET SW9": {
+        "lat": 51.46171,
+        "lon": -0.11282,
+        "on_street": "COLDHARBOUR LANE"
+    },
     "LOUGHBOROUGH JUNCTION STATION SW9": [
         51.4661,
         -0.102
@@ -246,10 +252,10 @@
         51.475,
         -0.021
     ],
-    "DEPTFORD STATION SE8": [
-        51.4788,
-        -0.0265
-    ],
+    "DEPTFORD STATION SE8": {
+        "lat": 51.47876,
+        "lon": -0.02745
+    },
     "MARYLEBONE STATION NW1": [
         51.5226,
         -0.1629
@@ -262,26 +268,31 @@
         51.5325,
         -0.194
     ],
-    "ROYAL COLLEGE OF MUSIC SW7": [
-        51.4997,
-        -0.1769
-    ],
-    "CROUCH HILL STATION N4": [
-        51.5713,
-        -0.1171
-    ],
-    "HARRINGAY STATION N4": [
-        51.577,
-        -0.1052
-    ],
-    "BRIXTON PRISON SW2": [
-        51.4516,
-        -0.1253
-    ],
-    "EAST PUTNEY STATION SW15": [
-        51.4587,
-        -0.2113
-    ],
+    "ROYAL COLLEGE OF MUSIC SW7": {
+        "lat": 51.49997,
+        "lon": -0.17553,
+        "on_street": "PRINCE CONSORT ROAD"
+    },
+    "CROUCH HILL STATION N4": {
+        "lat": 51.5709,
+        "lon": -0.11672,
+        "on_street": "CROUCH HILL"
+    },
+    "HARRINGAY STATION N4": {
+        "lat": 51.5771,
+        "lon": -0.10416,
+        "on_street": "WIGHTMAN ROAD"
+    },
+    "BRIXTON PRISON SW2": {
+        "lat": 51.45262,
+        "lon": -0.12101,
+        "on_street": "BRIXTON HILL"
+    },
+    "EAST PUTNEY STATION SW15": {
+        "lat": 51.45972,
+        "lon": -0.21183,
+        "on_street": "UPPER RICHMOND ROAD"
+    },
     "CLAPHAM COMMON STATION SW4": [
         51.4617,
         -0.1382
@@ -346,18 +357,20 @@
         51.4901,
         -0.2062
     ],
-    "WEST HAMPSTEAD STATION NW6": [
-        51.5415,
-        -0.1877
-    ],
+    "WEST HAMPSTEAD STATION NW6": {
+        "lat": 51.54701,
+        "lon": -0.19109,
+        "on_street": "WEST END LANE"
+    },
     "LAMBETH NORTH STATION SW1": [
         51.4989,
         -0.112
     ],
-    "THE GUILDHALL EC2": [
-        51.5159,
-        -0.092
-    ],
+    "THE GUILDHALL EC2": {
+        "lat": 51.51628,
+        "lon": -0.09311,
+        "on_street": "ALDERMANBURY"
+    },
     "GUILDHALL EC2": [
         51.5159,
         -0.092
@@ -374,10 +387,11 @@
         51.5273,
         -0.0899
     ],
-    "BBC TELEVISION CENTRE W12": [
-        51.5112,
-        -0.225
-    ],
+    "BBC TELEVISION CENTRE W12": {
+        "lat": 51.5096,
+        "lon": -0.2246,
+        "on_street": "WOOD LANE"
+    },
     "ST PETER'S CHURCH SE17": [
         51.4851,
         -0.0911
@@ -394,11 +408,354 @@
         51.477,
         -0.0321
     ],
-    "HOLLOWAY PRISON": "HM Prison Holloway",
-    "WANDSWORTH PRISON": "HM Prison Wandsworth",
-    "BRIXTON PRISON": "HM Prison Brixton",
-    "THE NEW DEN": "The Den",
-    "ROYAL HOSPITAL SW3": "Royal Hospital Chelsea",
-    "BBC TELEVISION CENTRE": "Television Centre",
-    "THEATRE ROYAL STRATFORD": "Theatre Royal Stratford East"
+    "HOLLOWAY PRISON": {
+        "lat": 51.5523,
+        "lon": -0.12506,
+        "on_street": "CAMDEN ROAD"
+    },
+    "WANDSWORTH PRISON": {
+        "lat": 51.4499,
+        "lon": -0.1758,
+        "on_street": "HEATHFIELD ROAD"
+    },
+    "BRIXTON PRISON": {
+        "lat": 51.45262,
+        "lon": -0.12101,
+        "on_street": "BRIXTON HILL"
+    },
+    "THE NEW DEN": {
+        "lat": 51.4851,
+        "lon": -0.04897
+    },
+    "ROYAL HOSPITAL SW3": {
+        "lat": 51.48693,
+        "lon": -0.16012,
+        "on_street": "ROYAL HOSPITAL ROAD"
+    },
+    "BBC TELEVISION CENTRE": {
+        "lat": 51.5096,
+        "lon": -0.2246,
+        "on_street": "WOOD LANE"
+    },
+    "THEATRE ROYAL STRATFORD": {
+        "lat": 51.54304,
+        "lon": 0.00054,
+        "on_street": "GREAT EASTERN ROAD"
+    },
+    "ARMOURY HOUSE EC1": "The HAC (Honourable Artillery Company) - Armoury House",
+    "CENTRAL CRIMINAL COURT EC4": "Central Criminal Court - The Old Bailey",
+    "GLENWORTH AVENUE E14": "CANARY WHARF COLLEGE, GLENWORTH",
+    "HARLESDEN HIGH STREET NW10": "HIGH STREET HARLESDEN NW10",
+    "KENNINGTON CROSS SE11": {
+        "lat": 51.48845,
+        "lon": -0.11123,
+        "on_street": "KENNINGTON ROAD"
+    },
+    "LAMBETH COLLEGE SW8": {
+        "lat": 51.4753,
+        "lon": -0.133,
+        "on_street": "BELMORE STREET"
+    },
+    "LONDON CHEST HOSPITAL E2": {
+        "lat": 51.5328,
+        "lon": -0.0538,
+        "on_street": "BONNER ROAD"
+    },
+    "MELTON COURT SW7": {
+        "lat": 51.4931,
+        "lon": -0.176,
+        "on_street": "OLD BROMPTON ROAD"
+    },
+    "MUSEUM OF LONDON EC2": {
+        "lat": 51.5177,
+        "lon": -0.0964,
+        "on_street": "LONDON WALL"
+    },
+    "OLYMPIA W14": {
+        "lat": 51.4959,
+        "lon": -0.2095,
+        "on_street": "HAMMERSMITH ROAD"
+    },
+    "PRINCE'S CIRCUS WC2": {
+        "lat": 51.5157,
+        "lon": -0.1267,
+        "on_street": "SHAFTESBURY AVENUE"
+    },
+    "THREE KINGS YARD W1": "Three Kings Yard Mayfair",
+    "VICTORIA COACH STATION SW1": "Victoria Coach Station Arrivals + Taxi Rank",
+    "LINFORD CHRISTIE STADIUM W12": {
+        "lat": 51.52082,
+        "lon": -0.22904
+    },
+    "DULWICH COLLEGE SE21": {
+        "lat": 51.44036,
+        "lon": -0.08365,
+        "on_street": "COLLEGE ROAD"
+    },
+    "KINGS CROSS STATION N1": {
+        "lat": 51.53002,
+        "lon": -0.12378,
+        "on_street": "EUSTON ROAD"
+    },
+    "ROYAL LONDON HOSPITAL E1": {
+        "lat": 51.51857,
+        "lon": -0.06283,
+        "on_street": "WHITECHAPEL ROAD"
+    },
+    "THE NEW DEN SE16": {
+        "lat": 51.4851,
+        "lon": -0.04897
+    },
+    "NATIONAL MARITIME MUSEUM SE10": {
+        "lat": 51.47976,
+        "lon": -0.00693
+    },
+    "LORD'S CRICKET GROUND NW8": {
+        "lat": 51.52918,
+        "lon": -0.1709,
+        "on_street": "ST JOHN'S WOOD ROAD"
+    },
+    "KING'S COLLEGE HOSPITAL SE5": {
+        "lat": 51.4698,
+        "lon": -0.09271,
+        "on_street": "DENMARK HILL"
+    },
+    "WATERLOO STATION SE1": {
+        "lat": 51.50342,
+        "lon": -0.11132,
+        "on_street": "WATERLOO ROAD"
+    },
+    "JUBILEE GARDENS SE1": {
+        "lat": 51.50293,
+        "lon": -0.11759,
+        "on_street": "BELVEDERE ROAD"
+    },
+    "MUDCHUTE STATION E14": {
+        "lat": 51.49048,
+        "lon": -0.01525
+    },
+    "CANNING TOWN STATION E16": {
+        "lat": 51.51491,
+        "lon": 0.00855,
+        "on_street": "SILVERTOWN WAY"
+    },
+    "CHELSEA AND WESTMINSTER HOSPITAL SW10": {
+        "lat": 51.48499,
+        "lon": -0.18268,
+        "on_street": "FULHAM ROAD"
+    },
+    "VICTORIA STATION SW1": {
+        "lat": 51.4943,
+        "lon": -0.14318
+    },
+    "STRATFORD STATION E15": {
+        "lat": 51.54178,
+        "lon": -0.00487
+    },
+    "FINSBURY PARK STATION N4": {
+        "lat": 51.56458,
+        "lon": -0.10474,
+        "on_street": "SEVEN SISTERS ROAD"
+    },
+    "SPITALFIELDS MARKET E10": {
+        "lat": 51.51903,
+        "lon": -0.07703,
+        "on_street": "BRUSHFIELD STREET"
+    },
+    "BURTON COURT SW3": {
+        "lat": 51.48883,
+        "lon": -0.16083
+    },
+    "LEICESTER SQUARE WC2": {
+        "lat": 51.51026,
+        "lon": -0.12831,
+        "on_street": "CHARING CROSS ROAD"
+    },
+    "HACKNEY CENTRAL STATION E8": {
+        "lat": 51.54764,
+        "lon": -0.05607,
+        "on_street": "AMHURST ROAD"
+    },
+    "HARLESDEN STATION NW10": {
+        "lat": 51.53673,
+        "lon": -0.25679,
+        "on_street": "ACTON LANE"
+    },
+    "EAST ACTON STATION W12": {
+        "lat": 51.51666,
+        "lon": -0.24834
+    },
+    "STREATHAM CEMETERY SW17": {
+        "lat": 51.43183,
+        "lon": -0.16632
+    },
+    "UNIVERSITY COLLEGE HOSPITAL WC1": {
+        "lat": 51.52546,
+        "lon": -0.13585,
+        "on_street": "EUSTON ROAD"
+    },
+    "HIGH STREET KENSINGTON STATION W8": {
+        "lat": 51.49943,
+        "lon": -0.19258,
+        "on_street": "WRIGHTS LANE"
+    },
+    "WARWICK AVENUE STATION W9": {
+        "lat": 51.52257,
+        "lon": -0.18259,
+        "on_street": "WARWICK AVENUE"
+    },
+    "KENSAL GREEN STATION NW10": {
+        "lat": 51.53083,
+        "lon": -0.2253,
+        "on_street": "COLLEGE ROAD"
+    },
+    "LAMBETH TOWN HALL SW2": {
+        "lat": 51.46089,
+        "lon": -0.1159,
+        "on_street": "BRIXTON HILL"
+    },
+    "EEL BROOK COMMON SW6": {
+        "lat": 51.47736,
+        "lon": -0.19429
+    },
+    "WEST BROMPTON STATION SW5": {
+        "lat": 51.48768,
+        "lon": -0.19506,
+        "on_street": "OLD BROMPTON ROAD"
+    },
+    "NUNHEAD STATION SE15": {
+        "lat": 51.46628,
+        "lon": -0.05243
+    },
+    "DOLLIS HILL STATION NW10": {
+        "lat": 51.55164,
+        "lon": -0.23976
+    },
+    "BARNES BRIDGE STATION SW13": {
+        "lat": 51.47205,
+        "lon": -0.25351,
+        "on_street": "THE TERRACE"
+    },
+    "BROMPTON ORATORY SW7": {
+        "lat": 51.49666,
+        "lon": -0.16924,
+        "on_street": "BROMPTON ROAD"
+    },
+    "PECKHAM RYE STATION SE15": {
+        "lat": 51.46976,
+        "lon": -0.06856
+    },
+    "TURNHAM GREEN STATION W4": {
+        "lat": 51.49467,
+        "lon": -0.25515
+    },
+    "THEATRE ROYAL STRATFORD E15": {
+        "lat": 51.54304,
+        "lon": 0.00054,
+        "on_street": "GREAT EASTERN ROAD"
+    },
+    "EARLSFIELD STATION SW18": {
+        "lat": 51.44252,
+        "lon": -0.18851,
+        "on_street": "GARRATT LANE"
+    },
+    "EUSTON STATION NW1": {
+        "lat": 51.52732,
+        "lon": -0.13244,
+        "on_street": "EUSTON GROVE"
+    },
+    "SOUTHFIELDS STATION SW18": {
+        "lat": 51.44557,
+        "lon": -0.20588,
+        "on_street": "WIMBLEDON PARK ROAD"
+    },
+    "ST JOHN'S WOOD STATION NW8": {
+        "lat": 51.53581,
+        "lon": -0.17455
+    },
+    "TURNPIKE LANE STATION N15": {
+        "lat": 51.59038,
+        "lon": -0.10328,
+        "on_street": "TURNPIKE LANE"
+    },
+    "BRONDESBURY STATION NW6": {
+        "lat": 51.54481,
+        "lon": -0.20191
+    },
+    "HERNE HILL STATION SE24": {
+        "lat": 51.45346,
+        "lon": -0.10106
+    },
+    "GREENWICH MARKET SE10": {
+        "lat": 51.48153,
+        "lon": -0.01004,
+        "on_street": "GREENWICH CHURCH STREET"
+    },
+    "TOTTENHAM COURT ROAD STATION W1": {
+        "lat": 51.51642,
+        "lon": -0.13037
+    },
+    "LAMBETH PALACE SE1": {
+        "lat": 51.4948,
+        "lon": -0.1202,
+        "on_street": "LAMBETH PALACE ROAD"
+    },
+    "CLAPHAM JUNCTION STATION SW11": {
+        "lat": 51.46321,
+        "lon": -0.16956,
+        "on_street": "ST JOHN'S HILL"
+    },
+    "ARCHWAY STATION N19": {
+        "lat": 51.56561,
+        "lon": -0.13428,
+        "on_street": "JUNCTION ROAD"
+    },
+    "NORTH GREENWICH STATION SE10": {
+        "lat": 51.49983,
+        "lon": 0.00483
+    },
+    "WHITESTONE POND NW3": {
+        "lat": 51.5604,
+        "lon": -0.1784,
+        "on_street": "HEATH STREET"
+    },
+    "HAMPSTEAD HEATH STATION NW3": {
+        "lat": 51.55524,
+        "lon": -0.16624,
+        "on_street": "SOUTH END ROAD"
+    },
+    "WEST DULWICH STATION SE21": {
+        "lat": 51.44109,
+        "lon": -0.0929,
+        "on_street": "THURLOW PARK ROAD"
+    },
+    "FULHAM BROADWAY STATION SW6": {
+        "lat": 51.48001,
+        "lon": -0.19563,
+        "on_street": "FULHAM ROAD"
+    },
+    "BILLINGSGATE MARKET E14": {
+        "lat": 51.50667,
+        "lon": -0.01062,
+        "on_street": "TRAFALGAR WAY"
+    },
+    "BRENT CROSS STATION NW11": {
+        "lat": 51.57745,
+        "lon": -0.21371
+    },
+    "COVENT GARDEN STATION WC2": {
+        "lat": 51.51379,
+        "lon": -0.1234,
+        "on_street": "LONG ACRE"
+    },
+    "SWISS COTTAGE STATION NW3": {
+        "lat": 51.54365,
+        "lon": -0.17496,
+        "on_street": "FINCHLEY ROAD"
+    },
+    "OLD STREET STATION EC1": {
+        "lat": 51.5257,
+        "lon": -0.08691,
+        "on_street": "OLD STREET"
+    }
 }
