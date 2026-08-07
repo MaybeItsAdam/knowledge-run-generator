@@ -2,6 +2,12 @@
 
 A Python engine for creating Knowledge of London "Runs" — validated, shortest-distance routes between points of interest in London.
 
+> **Current fidelity: 56 of 320 runs traverse their Blue Book streets in order.**
+> The `passed` count in `qa_report.json` (227/320) measures legality and
+> directness, *not* whether the route is the Blue Book run. See
+> [ROADMAP.md](./ROADMAP.md) for the measured baseline and the staged plan to
+> close the gap, and [What `passed` does and does not mean](#what-passed-does-and-does-not-mean).
+
 ## Features
 - **Semantic Routing**: A custom Dijkstra implementation that applies 90% routing discounts to "known" street sequences.
 - **Sequential Dijkstra**: Core logic that prevents "tractor beam" backtracks by requiring forward motion through sequence waypoints to unlock discounts.
@@ -220,10 +226,52 @@ failed before producing anything — plus two summary keys:
   straight line, missing steps. `krg generate all` gates on these, so an
   *unusable* data set fails the same way an *incomplete* one does.
 - `unreachable_legs` / `truncated_legs`: legs the router abandoned (no path, or
-  the search-state cap). Non-zero means the geometry has a gap.
+  the search-state cap). Non-zero would mean the geometry has a gap — but see
+  the caveat below: these are currently always `0` and cannot be relied on.
+- `ordered_coverage` / `strict_ordered`: how much of the Blue Book street
+  sequence the route drives **in order**. See below.
+- `order_first_gap` / `order_missing`: the street the in-order walk stalled on,
+  and the streets absent from the route entirely.
+- `route_hash` / `node_count`: geometry identity, so the regression harness can
+  detect a route change without the baseline carrying the geometry.
 - `_completeness`: `missing_ids` and `unusable_ids`.
 - `_provenance`: the graph size, network type, index sizes and timestamp behind
   this build, so a change in the routes can be attributed rather than guessed at.
+
+### What `passed` does and does not mean
+
+`passed` is `is_legal and is_direct and has_sane_detours`. It is a claim that a
+legal, reasonably direct road route exists between the two endpoints. **It is
+not a claim that the route is the Blue Book run.** Street coverage was removed
+from the gate, so a run can be marked `passed` while traversing none of its
+prescribed streets.
+
+Judge Blue Book fidelity on the ordered metrics instead:
+
+| Field | Question it answers |
+|---|---|
+| `street_coverage` | Were the streets touched at all, in any order? (Set-based, and its substring matching inflates the figure — `HIGH STREET` counts as a traversal of `HIGH STREET KENSINGTON`.) |
+| `ordered_coverage` | What fraction of the sequence was driven in order? Longest ordered subsequence, so one absent street costs one place. This is the number to track across builds. |
+| `strict_ordered` | Could a driver follow the run card without ever skipping a line? A greedy walk that stops at the first street it cannot match, so a single unresolvable junction name early on takes the whole tail with it. Triage, not tracking. |
+
+The two ordered figures agree exactly at `1.0`, which is what the Knowledge
+standard requires. As of the current build: mean `ordered_coverage` **0.817**,
+with **56/320** runs fully in order and 60 runs containing a prohibited turn.
+The gap between `street_coverage` (0.845) and `strict_ordered` (0.343) is the
+router's, not the metric's — the current search only *prefers* the expected
+streets via a cost discount rather than requiring them, so it reaches them out
+of order or not at all.
+
+### Known gaps in the QA signal
+
+Do not read these fields as meaningful yet:
+
+- `unreachable_legs` / `truncated_legs` are **always 0**. The router computes
+  them, but `correct_and_validate` drops the metadata and the pipeline
+  recomputes it from `_extract_route_metadata`, which doesn't produce those
+  keys. There is currently no visibility into whether the search-state cap fires.
+- `is_direct` is a poor fit for a Knowledge run, which is by definition not the
+  straight line between its endpoints.
 
 ### How run endpoints resolve
 
@@ -344,7 +392,9 @@ Options:
 
 ### Strict street-walker (alternative builder)
 
-`scripts/strict_route_demo.py` is a complementary builder that constructs each route by walking the named-street sequence directly: for every consecutive pair of streets it finds the OSM intersection node and runs an in-street Dijkstra restricted to edges with that street name, falling back to plain graph-Dijkstra only across short connector junctions where the two streets don't share a single node. This gets noticeably higher street-coverage (e.g. 89% on Run 4 vs. ~48% with the discount-based pipeline).
+`scripts/strict_route_demo.py` is a complementary builder that constructs each route by walking the named-street sequence directly: for every consecutive pair of streets it finds the OSM intersection node and runs an in-street Dijkstra restricted to edges with that street name, falling back to plain graph-Dijkstra only across short connector junctions where the two streets don't share a single node. This gets noticeably higher street-coverage, because a hard in-street constraint cannot skip a street the way a cost discount can.
+
+Two caveats on the comparison, which used to read "89% on Run 4 vs. ~48%": the `48%` baseline is stale (Run 4 now scores `street_coverage` 0.647), and the two numbers were never measured the same way — the demo computes exact set membership while `check_street_coverage` also accepts substring matches. The demo also does **not** honour turn restrictions: its Dijkstra state carries no predecessor node, so it structurally cannot reject a `(from, via, to)` triple, and its output would be less legal rather than more.
 
 ```bash
 python scripts/strict_route_demo.py --limit 5
