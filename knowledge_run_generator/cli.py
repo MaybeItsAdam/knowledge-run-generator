@@ -14,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+from collections import Counter
 from pathlib import Path
 
 import click
@@ -252,6 +253,37 @@ def qa(report, top):
     click.echo(f"  directness failures: {len(directness_fails)}")
     click.echo(f"  legality failures:   {len(legality_fails)}")
 
+    # Blue Book fidelity. `passed` above says the route is legal and direct; it
+    # says nothing about whether it is the *run*, so report that separately.
+    ordered = [v.get("ordered_coverage") for v in data.values()
+               if v.get("ordered_coverage") is not None]
+    strict = [v.get("strict_ordered") for v in data.values()
+              if v.get("strict_ordered") is not None]
+    if ordered:
+        full = sum(1 for v in ordered if v >= 1.0)
+        click.echo(
+            f"\nBlue Book fidelity (ordered street traversal):"
+            f"\n  mean ordered coverage: {sum(ordered) / len(ordered):.3f}"
+            f"   (longest in-order run of streets; one gap costs one place)"
+        )
+        if strict:
+            click.echo(
+                f"  mean strict-ordered:   {sum(strict) / len(strict):.3f}"
+                f"   (walk until the first street it can't match)"
+            )
+        click.echo(
+            f"  runs fully in order:   {full}/{len(ordered)}"
+            f"\n  runs below 0.6:        {sum(1 for v in ordered if v < 0.6)}"
+        )
+        gaps = Counter(
+            v.get("order_first_gap") for v in data.values()
+            if v.get("order_first_gap")
+        )
+        if gaps:
+            click.echo(f"  most common stall points:")
+            for name, n in gaps.most_common(10):
+                click.echo(f"    {n:3d}  {name}")
+
     click.echo(f"\nTop {top} preflight failures:")
     for k in preflight_fails[:top]:
         reasons = data[k].get("preflight_reasons", [])
@@ -263,6 +295,19 @@ def qa(report, top):
         click.echo(
             f"  Run {k}: ratio={r.get('ratio')}  offset={r.get('max_offset_m')}m"
         )
+
+    worst_ordered = sorted(
+        ((v.get("ordered_coverage"), k) for k, v in data.items()
+         if v.get("ordered_coverage") is not None),
+    )[:top]
+    if worst_ordered:
+        click.echo(f"\nTop {top} worst ordered coverage:")
+        for cov, k in worst_ordered:
+            r = data[k]
+            click.echo(
+                f"  Run {k}: ordered={cov}  strict={r.get('strict_ordered')}"
+                f"  stalled on {r.get('order_first_gap') or '(none)'}"
+            )
 
 
 # ---------------------------------------------------------------------------

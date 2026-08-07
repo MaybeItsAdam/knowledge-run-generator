@@ -40,6 +40,7 @@ from knowledge_run_generator.gazetteer import (
 from knowledge_run_generator.cache import cache_dir as krg_cache_dir
 from knowledge_run_generator.junctions import build_junction_index
 from knowledge_run_generator.osm_pois import load_cached_pois
+from knowledge_run_generator.regression import hash_nodes
 from knowledge_run_generator import caller
 
 
@@ -47,7 +48,8 @@ from knowledge_run_generator import caller
 # the per-run record schema changes shape (e.g. when "status" was introduced)
 # so a resume can tell a current record from one written by older code and
 # re-route the run instead of carrying the stale record forward.
-QA_SCHEMA_VERSION = 2
+# 3: added ordered_coverage / strict_ordered / order_first_gap / order_missing.
+QA_SCHEMA_VERSION = 3
 
 
 def _json_default(o):
@@ -737,17 +739,23 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     # off Nominatim — without it every unmatched endpoint costs a rate-limited
     # network round trip and fails preflight.
     knowledge_pois = {}
-    for candidate in (
-        os.environ.get("KRG_KNOWLEDGE_POIS"),
-        output_file.parent / "knowledge_pois.json",
-        DEFAULT_KNOWLEDGE_POIS_PATH,
-    ):
-        if not candidate:
-            continue
-        knowledge_pois = load_knowledge_pois(candidate)
-        if knowledge_pois:
-            print(f"Loaded {len(knowledge_pois)} geocoded Knowledge Points from {candidate}.")
-            break
+    explicit = os.environ.get("KRG_KNOWLEDGE_POIS")
+    if explicit:
+        # An explicitly-named Points List is authoritative, including when it
+        # is empty. Falling through to the repo default on an empty file meant
+        # "resolve against nothing" silently became "resolve against the real
+        # 5,500-entry list", which is the opposite of what the caller asked for.
+        knowledge_pois = load_knowledge_pois(explicit)
+        print(f"Loaded {len(knowledge_pois)} geocoded Knowledge Points from {explicit}.")
+    else:
+        for candidate in (
+            output_file.parent / "knowledge_pois.json",
+            DEFAULT_KNOWLEDGE_POIS_PATH,
+        ):
+            knowledge_pois = load_knowledge_pois(candidate)
+            if knowledge_pois:
+                print(f"Loaded {len(knowledge_pois)} geocoded Knowledge Points from {candidate}.")
+                break
     if not knowledge_pois:
         print("  No knowledge_pois.json found — endpoints will fall back to the "
               "geocoder. Run `krg generate pois` first for a faster, offline resolve.")
@@ -1053,6 +1061,15 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 "legal": validation.is_legal,
                 "is_direct": validation.is_direct,
                 "street_coverage": validation.coverage_metrics.get("coverage"),
+                # Ordered traversal of the Blue Book sequence — the Knowledge
+                # standard. `street_coverage` above says the streets were
+                # touched; these say they were driven in the prescribed order.
+                "ordered_coverage": validation.order_metrics.get("ordered_coverage"),
+                "strict_ordered": validation.order_metrics.get("strict_ordered"),
+                # The street the in-order walk stalled on. Usually the single
+                # root cause behind everything after it being missed.
+                "order_first_gap": validation.order_metrics.get("first_gap"),
+                "order_missing": validation.order_metrics.get("missing"),
                 "corrections": len(corrections),
                 # Legs the router abandoned. Non-zero means the geometry has a
                 # gap even though a route was produced.
@@ -1060,6 +1077,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 "truncated_legs": fwd_meta.get("truncated_legs", 0),
                 "fwd_distance_m": fwd_distance,
                 "rev_distance_m": rev_distance,
+                # Geometry identity, so the regression harness can see a route
+                # change without the baseline having to carry the geometry.
+                "node_count": len(route_nodes),
+                "route_hash": hash_nodes(route_nodes),
                 # Preflight signal
                 "preflight_ok": pre.ok,
                 "preflight_warnings": pre.warnings,
