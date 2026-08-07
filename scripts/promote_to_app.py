@@ -101,7 +101,56 @@ def validate_qa(min_passed: int) -> bool:
     if passed < min_passed:
         print(f"  ! only {passed} runs passed (< --min-passed {min_passed})")
         ok = False
+
+    # Blue Book fidelity. `passed` is a claim about legality and directness
+    # only — a route can satisfy it while traversing none of the run's streets,
+    # so it cannot be the sole gate on what ships to the app.
+    ordered = [v.get("ordered_coverage") for v in runs.values()
+               if v.get("ordered_coverage") is not None]
+    strict = [v.get("strict_ordered") for v in runs.values()
+              if v.get("strict_ordered") is not None]
+    if ordered:
+        full = sum(1 for v in ordered if v >= 1.0)
+        print(f"  fidelity: {full}/{len(ordered)} runs fully in Blue Book order, "
+              f"mean ordered {sum(ordered) / len(ordered):.3f}"
+              + (f", mean strict {sum(strict) / len(strict):.3f}" if strict else ""))
+    else:
+        print("  ! no run carries ordered_coverage — rebuild with a current "
+              "pipeline before promoting")
+        ok = False
     return ok
+
+
+def validate_regression() -> bool:
+    """Diff this build against the committed baseline.
+
+    CI cannot run this — it needs a qa_report.json, which needs the OSM graph —
+    so promotion is the only place the per-run regression check can actually
+    gate. Without it, `krg regression diff` is advisory and nothing stops a
+    build that quietly lost fidelity on 50 runs from shipping.
+    """
+    try:
+        from knowledge_run_generator.regression import (
+            DEFAULT_BASELINE_PATH, diff, format_diff, load_snapshot, summarise,
+        )
+    except ImportError as exc:
+        print(f"  ! cannot import the regression harness: {exc}")
+        return False
+
+    baseline_path = Path(DEFAULT_BASELINE_PATH)
+    if not baseline_path.exists():
+        print(f"  ! no baseline at {baseline_path}; "
+              "run `krg regression snapshot` to establish one")
+        return False
+
+    result = diff(load_snapshot(baseline_path), summarise(QA_SRC))
+    if result.has_regressions:
+        print("  ! regression vs baseline:")
+        for line in format_diff(result).splitlines():
+            print(f"      {line}")
+        return False
+    print("  regression: no regressions vs baseline ✓")
+    return True
 
 
 def build_zones(app: Path) -> None:
@@ -147,6 +196,9 @@ def main() -> int:
                         help="Minimum QA-passed run count required to promote.")
     parser.add_argument("--allow-partial", action="store_true",
                         help="Promote even if runs are incomplete or POIs missing.")
+    parser.add_argument("--skip-regression", action="store_true",
+                        help="Skip the diff against tests/golden/qa_baseline.json. "
+                             "Use when the baseline is deliberately being moved.")
     parser.add_argument("--app-dir", type=Path, default=DEFAULT_APP,
                         help="Consumer app checkout to promote into "
                              f"(default: {DEFAULT_APP}).")
@@ -164,8 +216,9 @@ def main() -> int:
     runs_ok, _missing = validate_runs(args.expected)
     pois_ok = validate_pois()
     qa_ok = validate_qa(args.min_passed)
+    regression_ok = True if args.skip_regression else validate_regression()
 
-    if not (runs_ok and pois_ok and qa_ok) and not args.allow_partial:
+    if not (runs_ok and pois_ok and qa_ok and regression_ok) and not args.allow_partial:
         print("\nRefusing to promote: validation failed. "
               "Re-run the pipeline(s), or pass --allow-partial to override.")
         return 1
