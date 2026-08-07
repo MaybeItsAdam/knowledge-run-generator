@@ -130,6 +130,10 @@ output/
 # in case someone sets cache_dir to the project root).
 app_cache/
 *.graphml
+# ...except the hand-built test fixtures. These are small (~23 KB), synthetic,
+# and required for the end-to-end test to run at all — without them a fresh
+# clone can't load the fixture and the whole test class errors out.
+!tests/fixtures/*.graphml
 alias_index.pkl
 street_index.pkl
 turn_restrictions.json

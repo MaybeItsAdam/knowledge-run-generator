@@ -62,6 +62,13 @@ class PipelineEndToEndTests(unittest.TestCase):
         rp.load_cached_pois = lambda *candidates: {}
         self._old_allow_no_osm = os.environ.get("KRG_ALLOW_NO_OSM")
         os.environ["KRG_ALLOW_NO_OSM"] = "1"
+        # Pin the Points List to the fixture explicitly. Relying on the
+        # output-directory candidate meant a test that emptied the file fell
+        # through to the real constants/knowledge_pois.json and resolved
+        # against 5,500 real London POIs — it still passed, but only because
+        # real coordinates land kilometres from the synthetic graph.
+        self._old_pois = os.environ.get("KRG_KNOWLEDGE_POIS")
+        os.environ["KRG_KNOWLEDGE_POIS"] = str(self.tmp / "knowledge_pois.json")
         self.geocoder_calls = []
 
     def tearDown(self):
@@ -71,6 +78,10 @@ class PipelineEndToEndTests(unittest.TestCase):
             os.environ.pop("KRG_ALLOW_NO_OSM", None)
         else:
             os.environ["KRG_ALLOW_NO_OSM"] = self._old_allow_no_osm
+        if self._old_pois is None:
+            os.environ.pop("KRG_KNOWLEDGE_POIS", None)
+        else:
+            os.environ["KRG_KNOWLEDGE_POIS"] = self._old_pois
         self._tmp.cleanup()
 
     def _offline_only_resolve(self, address, G, poi_overrides=None, gazetteer=None):
@@ -154,6 +165,19 @@ class PipelineEndToEndTests(unittest.TestCase):
         self.assertEqual(qa["1"]["status"], "failed")
         self.assertIn("geocode", qa["1"]["failure_reason"])
         self.assertIn("MANOR HOUSE STATION N4", self.geocoder_calls)
+
+    def test_run_records_ordered_blue_book_coverage(self):
+        """The metric the Knowledge standard is judged on has to survive the
+        whole pipeline, not just exist in the validator."""
+        _runs, qa = self._run()
+        record = qa["1"]
+        self.assertIn("ordered_coverage", record)
+        self.assertIsNotNone(record["ordered_coverage"])
+        # The fixture graph lays Run 1's streets out in Blue Book order, so a
+        # route across it should traverse them in order.
+        self.assertGreaterEqual(record["ordered_coverage"], 0.9)
+        self.assertTrue(record["route_hash"], "route_hash must be populated")
+        self.assertGreater(record["node_count"], 0)
 
 
 if __name__ == "__main__":
