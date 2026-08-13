@@ -31,7 +31,9 @@ FALLBACK_OVERPASS_URLS: tuple[str, ...] = (
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.openstreetmap.ru/api/interpreter",
 )
-DEFAULT_CACHE_PATH = Path("/tmp/app_cache/osm_pois.json")
+# The harvest is a committed input (the tier-3 gazetteer), not a scratch cache:
+# a fresh clone must resolve stations/hospitals without hitting Overpass.
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent / "constants" / "osm_pois.json"
 
 # Overpass blocks the default python-requests UA; a descriptive one is
 # expected by their usage policy.

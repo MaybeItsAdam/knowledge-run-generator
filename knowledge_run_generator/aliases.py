@@ -64,12 +64,32 @@ _LEADING_EXPANSIONS = {
 _PUNCT_RE = re.compile(r"[.,'’]")
 _WS_RE = re.compile(r"\s+")
 
+# Blue Book compass abbreviations. The unambiguous multi-letter forms expand
+# anywhere; single letters only expand when the next token is SIDE ("CLAPHAM
+# COMMON N SIDE" -> "... NORTH SIDE"), because a bare N/S/E/W elsewhere is
+# more likely a name fragment or postcode than a direction.
+_DIRECTIONAL_ABBREVIATIONS = {
+    "NTH": "NORTH",
+    "STH": "SOUTH",
+    "WST": "WEST",
+}
+_SINGLE_LETTER_DIRECTIONS = {
+    "N": "NORTH",
+    "S": "SOUTH",
+    "E": "EAST",
+    "W": "WEST",
+}
+
 
 def normalise(name: str) -> str:
     """Canonical form: upper-case, punctuation stripped, abbreviations expanded."""
     if not name:
         return ""
     s = _PUNCT_RE.sub("", str(name).upper().strip())
+    # Hyphens separate words ("Shoot-up Hill" vs the Blue Book's "SHOOT UP
+    # HILL"); both sides normalise through here so folding them to spaces is
+    # symmetric and safe.
+    s = s.replace("-", " ")
     s = _WS_RE.sub(" ", s)
     tokens = s.split(" ")
     if not tokens:
@@ -81,8 +101,13 @@ def normalise(name: str) -> str:
 
     expanded = []
     for i, t in enumerate(tokens):
+        following = tokens[i + 1] if i + 1 < len(tokens) else ""
         if i > 0 and t in _TOKEN_ABBREVIATIONS:
             expanded.append(_TOKEN_ABBREVIATIONS[t])
+        elif t in _DIRECTIONAL_ABBREVIATIONS:
+            expanded.append(_DIRECTIONAL_ABBREVIATIONS[t])
+        elif t in _SINGLE_LETTER_DIRECTIONS and following == "SIDE":
+            expanded.append(_SINGLE_LETTER_DIRECTIONS[t])
         else:
             expanded.append(t)
     return " ".join(expanded)
@@ -183,7 +208,10 @@ def build_alias_index(G) -> AliasIndex:
 #   1 -> initial fingerprinted format
 #   2 -> street index and coverage check moved onto this normaliser, so every
 #        cached index built before it keys on the old, unexpanded forms
-INDEX_FORMAT_VERSION = 2
+#   3 -> directional expansions (NTH/STH/WST, N/S/E/W before SIDE) added to
+#        the normaliser
+#   4 -> hyphens fold to spaces ("Shoot-up Hill" == "SHOOT UP HILL")
+INDEX_FORMAT_VERSION = 4
 
 
 def graph_fingerprint(G) -> tuple:

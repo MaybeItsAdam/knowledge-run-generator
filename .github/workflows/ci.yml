@@ -41,6 +41,44 @@ jobs:
         run: |
           python -m unittest discover -s tests -v
 
+      # The full route regression needs constants/qa_report.json, which is a
+      # build artefact requiring the OSM graph — CI can't produce one, so the
+      # per-run diff runs at promotion time instead (scripts/promote_to_app.py).
+      # What CI *can* enforce is that the committed baseline is present and
+      # carries real fingerprints, which is what silently rotted before: every
+      # entry had an empty route_hash, so the geometry check never fired.
+      - name: Check the regression baseline is alive
+        run: |
+          python - <<'PY'
+          import sys
+          from knowledge_run_generator.regression import (
+              DEFAULT_BASELINE_PATH, load_snapshot,
+          )
+
+          snap = load_snapshot(DEFAULT_BASELINE_PATH)
+          hashed = sum(1 for fp in snap.runs.values() if fp.route_hash)
+          ordered = sum(1 for fp in snap.runs.values()
+                        if fp.ordered_coverage is not None)
+          print(f"baseline: {snap.total} runs, {snap.passed} passed, "
+                f"{snap.fully_ordered} fully ordered")
+          print(f"  fingerprints with a route hash: {hashed}/{snap.total}")
+          print(f"  fingerprints with ordered coverage: {ordered}/{snap.total}")
+
+          if not snap.total:
+              sys.exit("baseline has no runs")
+          if not hashed:
+              sys.exit(
+                  "no baseline fingerprint carries a route_hash — the "
+                  "geometry-change check cannot fire. Regenerate with "
+                  "`krg generate runs && krg regression snapshot`."
+              )
+          if not ordered:
+              sys.exit(
+                  "no baseline fingerprint carries ordered_coverage — Blue "
+                  "Book fidelity is not being tracked."
+              )
+          PY
+
   webapp-template:
     name: Webapp template (HTML + inline JS parse)
     runs-on: ubuntu-latest

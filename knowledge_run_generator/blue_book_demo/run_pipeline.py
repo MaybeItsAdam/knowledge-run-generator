@@ -23,22 +23,45 @@ sys.path.append(str(PROJECT_ROOT))
 
 from knowledge_run_generator.geocoder import geocode_address, geocode_and_snap, geocode_intersection
 from knowledge_run_generator.router import (
-    load_graph, get_route, get_constrained_route,
+    load_graph, get_route,
     nodes_to_coords_geometry, _extract_route_metadata,
+    route_ordered_with_ladder, constraint_waypoints,
 )
 from knowledge_run_generator.validator import (
-    check_run_shape, load_turn_restrictions, validate_route, ValidationResult,
+    check_constraint_order, check_run_shape, load_turn_restrictions,
+    validate_route, ValidationResult,
 )
-from knowledge_run_generator.corrector import correct_and_validate
 from knowledge_run_generator.geojson_export import route_to_geojson_feature, export_all_runs_geojson
 from knowledge_run_generator.aliases import (
     load_or_build_alias_index, normalise as _canonical_normalise,
 )
+from knowledge_run_generator.constraints import (
+    _ABBREVIATIONS, _JUNCTION_SUFFIXES,  # noqa: F401 — re-exported for scripts
+    HARD_SOURCES,
+    compile_constraints,
+    fuzzy_street_match as _fuzzy_street_match,
+    is_roundabout_line,
+)
 from knowledge_run_generator.gazetteer import (
     DEFAULT_KNOWLEDGE_POIS_PATH, Gazetteer, load_knowledge_pois, preflight_run,
 )
+from knowledge_run_generator.cache import cache_dir as krg_cache_dir
+from knowledge_run_generator.junctions import build_junction_index
 from knowledge_run_generator.osm_pois import load_cached_pois
+from knowledge_run_generator.regression import hash_nodes
 from knowledge_run_generator import caller
+
+
+# Version stamp for qa_report.json, written into ``_provenance``. Bump whenever
+# the per-run record schema changes shape (e.g. when "status" was introduced)
+# so a resume can tell a current record from one written by older code and
+# re-route the run instead of carrying the stale record forward.
+# 3: added ordered_coverage / strict_ordered / order_first_gap / order_missing.
+# 4: ordered router is the only router — records carry routing_mode,
+#    demoted_constraints, hard_gaps, constraint_gaps/sources, ring_laps,
+#    ordered_optimum_m / excess_over_ordered_optimum, district plausibility;
+#    `passed` now gates on legality + ordered traversal + no hard gaps.
+QA_SCHEMA_VERSION = 4
 
 
 def _json_default(o):
@@ -66,6 +89,37 @@ def _save_runs(output_file, runs_data):
         json.dump(ordered, f, indent=2, default=_json_default)
 
 
+def _partition_resumable_qa(existing_qa):
+    """Split an existing qa_report dict into ``(carry_forward, stale_run_ids)``.
+
+    A per-run record may only be carried across a resume when it is
+    trustworthy: it must carry the ``"status"`` field (older reports predate
+    it) and the report must have been written by the current
+    :data:`QA_SCHEMA_VERSION`. Anything else is stale — the run has to be
+    re-routed, not silently resumed past.
+
+    Meta keys (``_provenance``, ``_completeness``) are regenerated at save
+    time and are never treated as run records.
+    """
+    version = None
+    provenance = existing_qa.get("_provenance")
+    if isinstance(provenance, dict):
+        version = provenance.get("qa_schema_version")
+
+    carry = {}
+    stale_ids = set()
+    for key, value in existing_qa.items():
+        if not str(key).lstrip("-").isdigit():
+            continue
+        if (version == QA_SCHEMA_VERSION
+                and isinstance(value, dict)
+                and "status" in value):
+            carry[key] = value
+        else:
+            stale_ids.add(int(key))
+    return carry, stale_ids
+
+
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
@@ -78,15 +132,96 @@ def parse_run_line(line):
     return None
 
 
-def parse_intermediary_file(path):
+# Trailing set-down/annotation markers on a street line. Mirrors
+# scripts/strict_route_demo.py: SDOL/SDOR (set down on left/right), FACING,
+# and "<name> ON LEFT / ON RIGHT / ON LEFT & RIGHT" arrival notes — including
+# the abbreviated "ON L & R" / "ON L OR R" / "ON L" / "ON R" forms the source
+# text uses on a handful of runs (21, 39, 248, 253).
+_END_MARKERS = re.compile(
+    r"\s+(SDOL|SDOR|FACING|ON LEFT.*|ON RIGHT.*|ON LEFT & RIGHT.*"
+    r"|ON L(\s*&\s*R|\s+OR\s+R)?|ON R)$"
+)
+
+# "MANOR HOUSE STATION N4" -> stem "MANOR HOUSE STATION" (postcode dropped),
+# used to peel the destination name off the final street line.
+_POSTCODE_RE = re.compile(r"\s+[A-Z]{1,2}\d{1,2}[A-Z]?\s*[.,]?\s*$")
+
+
+def _clean_street_line(raw_street, destination=None):
+    """Reduce a Blue Book street line to the street name itself.
+
+    Strips trailing arrival annotations (``... FACING``, ``... SDOL/SDOR``,
+    ``... <NAME> ON LEFT/ON RIGHT``), then — because the final line of a run
+    reads "<street> <destination> FACING/ON LEFT" — peels the run's
+    destination name off the tail if it is still there. Finally drops a
+    leading "CROSS " verb ("CROSS FULHAM ROAD" names Fulham Road, not a
+    street called Cross), guarded so a street actually *named* "Cross
+    Something" single-word remainder is left alone.
     """
-    Read ``blue-book-runs-intermediatery.txt`` and return:
+    street = _END_MARKERS.sub("", raw_street).strip(" ._\n\r\t")
+    if not street:
+        return ""
+
+    # "FACING" may be mid-token when the annotation carried extra words the
+    # regex anchored off; the legacy split is kept as a belt-and-braces pass.
+    street = street.split("FACING")[0].strip(" ._\n\r\t")
+
+    if destination:
+        dest_stem = _POSTCODE_RE.sub("", destination.upper()).strip()
+        upper = street.upper()
+        if dest_stem and upper != dest_stem and upper.endswith(" " + dest_stem):
+            street = street[: -(len(dest_stem) + 1)].strip(" ._\n\r\t")
+
+    if street.upper().startswith("CROSS ") and len(street.split()) >= 3:
+        street = street[6:].strip()
+
+    return street
+
+
+# Direction verbs that can trail a street name when a source line carries two
+# streets ("R___ MORNING LANE R___ MARE STREET" — the second R belongs to MARE
+# STREET). Only non-final segments of a multi-split line are peeled, so a
+# street genuinely ending in one of these tokens is never touched.
+_TRAILING_DIR_VERBS = {
+    "L", "R", "F", "COM", "LOL", "LOR", "B/L", "B/R", "L/BY", "BY", "&",
+}
+
+# Airport-internal service loops the run text names but the drive graph
+# cannot usefully route through.
+_TERMINAL_ROADS = {"DEPARTURES ROAD", "CAB ROAD", "ARRIVALS ROAD"}
+
+
+def _count_ring_laps(G, route_nodes):
+    """Node revisits inside gyratory traversals — a lap costs full length now
+    that the discount is gone, so a non-zero count is a report-worthy anomaly,
+    not something to mutate away after the fact."""
+    if not route_nodes or len(route_nodes) < 2:
+        return 0
+    from knowledge_run_generator.diagnostics import detect_ring_traversals, walk_route
+    rings = detect_ring_traversals(walk_route(G, route_nodes))
+    return int(sum(r.revisits for r in rings))
+
+
+def _strip_trailing_direction_verbs(name):
+    words = name.split()
+    while words and words[-1].upper() in _TRAILING_DIR_VERBS:
+        words.pop()
+    return " ".join(words)
+
+
+def parse_intermediary_lines(path):
+    """
+    Read the intermediary run text and return the *full* ordered line
+    sequence per run:
       - run_titles: dict  {run_id: (origin, destination)}
-      - intermediary_runs: dict  {run_id: [street_name, ...]}
+      - run_lines:  dict  {run_id: [line, ...]} — roundabout markers included,
+        so the constraint compiler can place them; street-only consumers go
+        through :func:`parse_intermediary_file`, which filters them out.
     """
-    intermediary_runs = {}
+    run_lines = {}
     run_titles = {}
     current_id = None
+    spelling_fixes = load_street_spelling_fixes()
 
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -94,24 +229,76 @@ def parse_intermediary_file(path):
             run_match = parse_run_line(line)
             if run_match:
                 current_id, origin, destination = run_match
-                intermediary_runs[current_id] = []
+                run_lines[current_id] = []
                 run_titles[current_id] = (origin, destination)
             elif current_id and line and not line.startswith("RUN"):
                 parts = re.split(r"_{2,}", line)
                 if len(parts) > 1:
-                    raw_street = parts[1]
-                    street_name = raw_street.split("FACING")[0].strip(" ._\n\r\t")
+                    # A line may carry several streets, each introduced by its
+                    # own direction verb; keeping only parts[1] used to turn
+                    # Run 160's "R___ MORNING LANE R___ MARE STREET" into the
+                    # phantom street "MORNING LANE R" and lose MARE STREET.
+                    segments = parts[1:]
+                    for si, segment in enumerate(segments):
+                        street_name = _clean_street_line(
+                            segment, destination=run_titles[current_id][1]
+                        )
+                        if si < len(segments) - 1:
+                            street_name = _strip_trailing_direction_verbs(street_name)
+                        street_name = spelling_fixes.get(
+                            street_name.upper(), street_name
+                        )
+                        if (street_name
+                                and street_name.upper() not in _TERMINAL_ROADS):
+                            run_lines[current_id].append(street_name)
 
-                    if street_name.endswith(" SDOL"):
-                        street_name = street_name[:-5].strip()
+    return run_titles, run_lines
 
-                    terminal_roads = {"DEPARTURES ROAD", "CAB ROAD", "ARRIVALS ROAD"}
-                    if (street_name
-                            and "ROUNDABOUT" not in street_name.upper()
-                            and street_name.upper() not in terminal_roads):
-                        intermediary_runs[current_id].append(street_name)
 
+def parse_intermediary_file(path):
+    """
+    Read ``blue-book-runs-intermediatery.txt`` and return:
+      - run_titles: dict  {run_id: (origin, destination)}
+      - intermediary_runs: dict  {run_id: [street_name, ...]}
+
+    Roundabout markers (``ROUNDABOUT``, ``R/BOUT``, ``<NAME> ROUNDABOUT``) are
+    filtered out: they are not street names, and every street-level consumer
+    (coverage, preflight, the legacy discount list) would mis-treat them. The
+    constraint compiler consumes :func:`parse_intermediary_lines` instead,
+    where they survive as NODE-constraint material.
+    """
+    run_titles, run_lines = parse_intermediary_lines(path)
+    intermediary_runs = {
+        run_id: [s for s in seq if not is_roundabout_line(s)]
+        for run_id, seq in run_lines.items()
+    }
     return run_titles, intermediary_runs
+
+
+_spelling_fixes_cache = None
+
+
+def load_street_spelling_fixes(path=None):
+    """Blue Book typo → correct street name map (upper-cased keys).
+
+    Curated in ``street_spelling_fixes.json`` next to the run text. Applied
+    at parse time so the preflight check, the waypoint builder and the
+    coverage metric all see the same corrected names.
+    """
+    global _spelling_fixes_cache
+    if path is None and _spelling_fixes_cache is not None:
+        return _spelling_fixes_cache
+    fixes_path = Path(path) if path else DEMO_DIR / "street_spelling_fixes.json"
+    fixes = {}
+    if fixes_path.exists():
+        try:
+            raw = json.loads(fixes_path.read_text())
+            fixes = {str(k).upper(): str(v) for k, v in raw.items()}
+        except Exception as exc:
+            print(f"Warning: could not load street spelling fixes: {exc}")
+    if path is None:
+        _spelling_fixes_cache = fixes
+    return fixes
 
 
 # ---------------------------------------------------------------------------
@@ -167,257 +354,6 @@ _normalise = _canonical_normalise
 
 
 # ---------------------------------------------------------------------------
-# Street matching (abbreviation expansion, fuzzy)
-# ---------------------------------------------------------------------------
-
-_ABBREVIATIONS = {
-    " ST": " STREET", " RD": " ROAD", " AVE": " AVENUE",
-    " SQ": " SQUARE", " PL": " PLACE", " LN": " LANE",
-    " GDNS": " GARDENS", " PK": " PARK", " CIR": " CIRCUS",
-    " HL": " HILL", " RI": " RISE", " CR": " CRESCENT",
-    "R/BOUT": "ROUNDABOUT", " R/BOUT": " ROUNDABOUT",
-}
-
-_JUNCTION_SUFFIXES = [
-    " CIRCUS", " CROSS", " INTERCHANGE", " JUNCTION", " CORNER",
-    " SLIP", " SLIP ROAD", " APPROACH", " TUNNEL", " BRIDGE SLIP",
-]
-
-
-def get_best_street_match(raw_name, street_to_nodes):
-    """Find the best match for *raw_name* in the street index."""
-    cleaned = raw_name.upper()
-    for suffix in _JUNCTION_SUFFIXES:
-        if cleaned.endswith(suffix):
-            cleaned = cleaned[: -len(suffix)].strip()
-            break
-
-    base = _normalise(cleaned)
-    if base in street_to_nodes:
-        return base
-
-    # Expand abbreviations (in-string)
-    expanded = base
-    for abbr, full in _ABBREVIATIONS.items():
-        if abbr in expanded:
-            expanded = expanded.replace(abbr, full)
-    if expanded != base and expanded in street_to_nodes:
-        return expanded
-
-    # Expand abbreviations (suffix-only)
-    for abbr, full in _ABBREVIATIONS.items():
-        if base.endswith(abbr):
-            candidate = base[: -len(abbr)] + full
-            if candidate in street_to_nodes:
-                return candidate
-
-    # Progressive word removal
-    words = cleaned.split()
-    while words:
-        norm = _normalise(" ".join(words))
-        if norm in street_to_nodes:
-            return norm
-        words.pop()
-
-    return base
-
-
-# ---------------------------------------------------------------------------
-# Intersection finding
-# ---------------------------------------------------------------------------
-
-def find_intersection_node(G, s1, s2, street_to_nodes,
-                           prev_point=None, dest_point=None):
-    """
-    Find the graph node at the intersection of streets *s1* and *s2*.
-
-    When multiple candidates exist, prefer the one that:
-      1. Is closest to *prev_point* (continuity), AND
-      2. Makes forward progress toward *dest_point* (prevents backtracks).
-
-    The scoring blends both: ``score = dist_from_prev - 0.5 * progress_toward_dest``
-    so that a node slightly further from prev but much closer to dest wins.
-    """
-    n1 = get_best_street_match(s1, street_to_nodes)
-    n2 = get_best_street_match(s2, street_to_nodes)
-    nodes1 = street_to_nodes.get(n1, set())
-    nodes2 = street_to_nodes.get(n2, set())
-
-    common = nodes1.intersection(nodes2)
-
-    if not common:
-        # Fuzzy: find closest pair within ~200 m tolerance
-        min_dist = 0.002
-        best_node = None
-        for u in nodes1:
-            if u not in G.nodes:
-                continue
-            p1 = G.nodes[u]
-            for v in nodes2:
-                if v not in G.nodes:
-                    continue
-                p2 = G.nodes[v]
-                dist_sq = (p1["x"] - p2["x"]) ** 2 + (p1["y"] - p2["y"]) ** 2
-                if dist_sq < min_dist ** 2:
-                    min_dist = dist_sq ** 0.5
-                    best_node = u
-        return best_node
-
-    candidates = [c for c in common if c in G.nodes]
-    if not candidates:
-        return None
-    if len(candidates) == 1:
-        return candidates[0]
-
-    # Score candidates: prefer close to prev AND making progress toward dest
-    best = None
-    best_score = float("inf")
-    for nid in candidates:
-        n = G.nodes[nid]
-        score = 0.0
-        if prev_point:
-            score += math.sqrt(
-                (n["y"] - prev_point[0]) ** 2 + (n["x"] - prev_point[1]) ** 2
-            )
-        if dest_point:
-            dist_to_dest = math.sqrt(
-                (n["y"] - dest_point[0]) ** 2 + (n["x"] - dest_point[1]) ** 2
-            )
-            # Reward progress toward destination
-            score -= 0.5 * dist_to_dest
-        if score < best_score:
-            best_score = score
-            best = nid
-    return best
-
-
-# ---------------------------------------------------------------------------
-# Waypoint construction from Blue Book streets
-# ---------------------------------------------------------------------------
-
-
-def build_waypoints_from_streets(G, intermediate_streets, street_to_nodes,
-                                  start_coords, end_coords):
-    """
-    Walk the intermediate street list and return an ordered list of waypoints.
-    For normal streets, we don't generate strict node waypoints (relying on soft 
-    edge discounts instead). However, if an intersection falls on a roundabout or 
-    motorway link, we yield the entire topological ring as a single waypoint set.
-    """
-    raw_waypoints = []
-    prev_pt = start_coords  # (lat, lon) tuple
-
-    for i in range(len(intermediate_streets) - 1):
-        s1 = intermediate_streets[i]
-        s2 = intermediate_streets[i + 1]
-        if s1.upper() == s2.upper():
-            continue
-
-        node = find_intersection_node(
-            G, s1, s2, street_to_nodes,
-            prev_point=prev_pt, dest_point=end_coords,
-        )
-        if node:
-            nd = G.nodes[node]
-            prev_pt = (nd["y"], nd["x"])
-            
-            # Check if this node is part of a roundabout or motorway_link
-            is_roundabout = False
-            for _, _, data in G.edges(node, data=True):
-                if data.get('junction') == 'roundabout' or data.get('highway') == 'motorway_link':
-                    is_roundabout = True
-                    break
-                    
-            if not is_roundabout:
-                for u, _, data in G.in_edges(node, data=True):
-                    if data.get('junction') == 'roundabout' or data.get('highway') == 'motorway_link':
-                        is_roundabout = True
-                        break
-
-            if is_roundabout:
-                # BFS to collect the whole ring
-                ring_nodes = set([node])
-                queue = [node]
-                while queue:
-                    curr = queue.pop(0)
-                    # Forward edges
-                    for nxt in G.successors(curr):
-                        if nxt in ring_nodes: continue
-                        for _, edge_data in G.get_edge_data(curr, nxt).items():
-                            if edge_data.get('junction') == 'roundabout' or edge_data.get('highway') == 'motorway_link':
-                                ring_nodes.add(nxt)
-                                queue.append(nxt)
-                                break
-                    # Backward edges
-                    for prev in G.predecessors(curr):
-                        if prev in ring_nodes: continue
-                        for _, edge_data in G.get_edge_data(prev, curr).items():
-                            if edge_data.get('junction') == 'roundabout' or edge_data.get('highway') == 'motorway_link':
-                                ring_nodes.add(prev)
-                                queue.append(prev)
-                                break
-                
-                # Treat entire ring as a single waypoint
-                raw_waypoints.append(ring_nodes)
-            else:
-                # For non-roundabout intersections, we now ALSO generate a hard waypoint.
-                # This prevents massive Dijkstra search spaces (e.g. Run 12 Mile End -> Barbican).
-                raw_waypoints.append({node})
-
-    # Remove backward waypoints (zigzag elimination)
-    cleaned = _remove_backtracks(G, raw_waypoints, start_coords, end_coords)
-
-    return cleaned
-
-
-
-def _remove_backtracks(G, waypoint_nodes, start_coords, end_coords):
-    """
-    Remove waypoints that move backwards relative to the origin→destination
-    direction.  Uses scalar projection onto the O→D vector; a waypoint whose
-    projection is less than the previous waypoint's projection is a backtrack.
-
-    Allows small regressions (up to 15% of total O→D distance) to accommodate
-    legitimate minor detours around one-way systems.
-    """
-    if len(waypoint_nodes) < 2:
-        return waypoint_nodes
-
-    # Direction vector from origin to destination (in degrees)
-    dx = end_coords[1] - start_coords[1]  # lon
-    dy = end_coords[0] - start_coords[0]  # lat
-    od_len_sq = dx * dx + dy * dy
-    if od_len_sq == 0:
-        return waypoint_nodes
-
-    # Allow regression of up to 15% of total O→D length
-    regression_tolerance = 0.15 * math.sqrt(od_len_sq)
-
-    def proj(wp):
-        # Extract a representative node if wp is a set
-        nid = next(iter(wp)) if isinstance(wp, (set, list, tuple)) else wp
-        n = G.nodes[nid]
-        px = n["x"] - start_coords[1]
-        py = n["y"] - start_coords[0]
-        return (px * dx + py * dy) / od_len_sq
-
-    result = [waypoint_nodes[0]]
-    max_proj = proj(waypoint_nodes[0])
-
-    for nid in waypoint_nodes[1:]:
-        p = proj(nid)
-        # Keep if it's forward or only a small regression
-        regression = (max_proj - p) * math.sqrt(od_len_sq)
-        if regression <= regression_tolerance:
-            result.append(nid)
-            if p > max_proj:
-                max_proj = p
-        # else: skip — this waypoint is a backtrack
-
-    return result
-
-
-# ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
@@ -462,8 +398,30 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         try:
             existing_qa = json.loads(qa_path.read_text())
             if isinstance(existing_qa, dict):
-                qa_results.update(existing_qa)
-                print(f"Loaded {len(existing_qa)} existing QA records from {qa_path}")
+                carry, stale_ids = _partition_resumable_qa(existing_qa)
+                if select_ids is not None:
+                    # A subset invocation only visits the selected ids, so
+                    # invalidating anything else would drop those runs from
+                    # runPoints.json without ever regenerating them. Selected
+                    # ids are force-regenerated below regardless; keep the
+                    # rest as-is and let the next full resume clean them up.
+                    for rid in stale_ids - select_ids:
+                        entry = existing_qa.get(str(rid))
+                        if isinstance(entry, dict):
+                            carry[str(rid)] = entry
+                    stale_ids &= select_ids
+                qa_results.update(carry)
+                print(f"Loaded {len(carry)} existing QA records from {qa_path}")
+                dropped = processed_ids & stale_ids
+                if dropped:
+                    # Stale-shaped records (no "status", or an older schema
+                    # version) can't be trusted; re-route their runs rather
+                    # than resuming past them with a stale verdict.
+                    runs_data = [r for r in runs_data if r["id"] not in dropped]
+                    processed_ids -= dropped
+                    preview = sorted(dropped)[:10]
+                    print(f"Invalidated {len(dropped)} stale QA record(s); "
+                          f"re-routing {preview}{'...' if len(dropped) > 10 else ''}")
         except (json.JSONDecodeError, OSError) as exc:
             print(f"Warning: could not read existing QA report: {exc}")
 
@@ -482,16 +440,34 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         print(f"Error: {inter_file} not found.")
         return
 
-    run_titles, intermediary_runs = parse_intermediary_file(inter_file)
+    run_titles, run_lines = parse_intermediary_lines(inter_file)
+    # Street-only view for the legacy discount router, coverage and preflight;
+    # the constraint compiler consumes the full line sequence.
+    intermediary_runs = {
+        run_id: [s for s in seq if not is_roundabout_line(s)]
+        for run_id, seq in run_lines.items()
+    }
     run_ids_sorted = sorted(run_titles.keys())
+
+    # One ordered-constraint A* per run is the only routing mode: ordering is
+    # the Knowledge standard, and the legacy multi-leg discount router (which
+    # could skip streets and manufactured illegal turns in post-processing)
+    # was deleted with the Stage 5 gate swap.
+    routing_mode = os.environ.get("KRG_ROUTING_MODE", "ordered").strip().lower()
+    if routing_mode != "ordered":
+        raise ValueError(
+            f"KRG_ROUTING_MODE={routing_mode!r} is not supported: the legacy "
+            "discount router was removed once the ordered search became the "
+            "default (see ROADMAP Stage 5)."
+        )
 
     # Load graph
     print("Loading graph...")
     G = load_graph(network_type=network_type)
 
     # Street index. cache_dir is a parameter so tests (and parallel builds)
-    # can keep their derived indexes out of the shared /tmp location.
-    cache_dir = Path(cache_dir) if cache_dir else Path("/tmp/app_cache")
+    # can keep their derived indexes out of the shared location.
+    cache_dir = Path(cache_dir) if cache_dir else krg_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
     street_to_nodes = build_street_index(G, cache_dir)
     print(f"Indexed {len(street_to_nodes)} street names.")
@@ -521,6 +497,21 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     print(f"  {len(alias_index.canonical_to_nodes)} canonical streets, "
           f"{len(alias_index.alias_to_canonical)} aliases.")
 
+    # Junction/gyratory names (VAUXHALL CROSS, BANK JUNCTION, ...) resolved to
+    # the nodes where their constituent streets meet. The legacy path wants
+    # them merged into its street index so get_best_street_match hits them
+    # before its word-removal fallback — but the merge is done on a *copy*:
+    # the constraint compiler must see the pure edge-name index, because a
+    # merged junction key has graph nodes but zero edges of that name, and a
+    # STREET constraint on it can never be satisfied.
+    junction_index = build_junction_index(alias_index, G=G)
+    street_index_pure = street_to_nodes
+    street_to_nodes = {k: set(v) for k, v in street_index_pure.items()}
+    for junction_name, junction_nodes in junction_index.items():
+        street_to_nodes.setdefault(junction_name, set()).update(junction_nodes)
+    known_junctions = set(junction_index)
+    print(f"  {len(junction_index)} junction definitions resolved to graph nodes.")
+
     # Optional OSM POI harvest (Quick Win 8): if the cache exists we fold it
     # into the gazetteer as a second-chance lookup behind the curated
     # overrides. Populate it with `krg osm-pois`; we never auto-fetch here.
@@ -530,26 +521,35 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         PROJECT_ROOT / "constants" / "osm_pois.json",
         cache_dir / "osm_pois.json",
     )
-    if not osm_pois:
-        print("  No OSM POI harvest found — run `krg osm-pois` so station "
-              "endpoints resolve without the geocoder.")
+    if not osm_pois and not os.environ.get("KRG_ALLOW_NO_OSM"):
+        raise RuntimeError(
+            "No OSM POI harvest found — the tier-3 gazetteer would be empty and "
+            "station/hospital endpoints would silently fall through to Nominatim. "
+            "Run `krg osm-pois` first (or set KRG_ALLOW_NO_OSM=1 to proceed anyway)."
+        )
 
     # Geocoded Knowledge Points List (from `krg generate pois`). Most Blue Book
     # run endpoints are Points List entries, so this is what keeps the pipeline
     # off Nominatim — without it every unmatched endpoint costs a rate-limited
     # network round trip and fails preflight.
     knowledge_pois = {}
-    for candidate in (
-        os.environ.get("KRG_KNOWLEDGE_POIS"),
-        output_file.parent / "knowledge_pois.json",
-        DEFAULT_KNOWLEDGE_POIS_PATH,
-    ):
-        if not candidate:
-            continue
-        knowledge_pois = load_knowledge_pois(candidate)
-        if knowledge_pois:
-            print(f"Loaded {len(knowledge_pois)} geocoded Knowledge Points from {candidate}.")
-            break
+    explicit = os.environ.get("KRG_KNOWLEDGE_POIS")
+    if explicit:
+        # An explicitly-named Points List is authoritative, including when it
+        # is empty. Falling through to the repo default on an empty file meant
+        # "resolve against nothing" silently became "resolve against the real
+        # 5,500-entry list", which is the opposite of what the caller asked for.
+        knowledge_pois = load_knowledge_pois(explicit)
+        print(f"Loaded {len(knowledge_pois)} geocoded Knowledge Points from {explicit}.")
+    else:
+        for candidate in (
+            output_file.parent / "knowledge_pois.json",
+            DEFAULT_KNOWLEDGE_POIS_PATH,
+        ):
+            knowledge_pois = load_knowledge_pois(candidate)
+            if knowledge_pois:
+                print(f"Loaded {len(knowledge_pois)} geocoded Knowledge Points from {candidate}.")
+                break
     if not knowledge_pois:
         print("  No knowledge_pois.json found — endpoints will fall back to the "
               "geocoder. Run `krg generate pois` first for a faster, offline resolve.")
@@ -615,6 +615,13 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         pre = preflight_run(
             start_entry, end_entry,
             intermediate_streets_raw, alias_index,
+            known_junctions=known_junctions,
+            # Endpoint plausibility: an endpoint that snaps cleanly can still
+            # be in the wrong borough entirely (Run 131's "SHORTLANDS W6"
+            # resolved 18.5 km away). The district model fails those here.
+            district_model=gazetteer.district_model,
+            start_name=origin,
+            end_name=destination,
         )
         if pre.warnings:
             for w in pre.warnings:
@@ -630,6 +637,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 "preflight_reasons": pre.reasons,
                 "start_snap_m": pre.start_snap_m,
                 "end_snap_m": pre.end_snap_m,
+                "start_district_m": pre.start_district_m,
+                "end_district_m": pre.end_district_m,
                 "unresolved_streets": pre.unresolved_streets,
             }
             # Keep going but flag the route; users can triage from qa_report.json.
@@ -650,8 +659,23 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             run_config["skip_directness_check"] = True
 
         try:
-            # ----- Build intermediate waypoints -----
+            # ----- Street sequence (with patch removals) -----
             intermediate_streets = list(intermediary_runs.get(run_id, []))
+            constraint_lines = list(run_lines.get(run_id, []))
+
+            # Run-scoped renames: for Blue Book lines that name the wrong
+            # street *in this run only* (Run 153's "KING HENRY'S ROAD" off
+            # Balls Pond Road is King Henry's Walk; Run 290 uses the real
+            # King Henry's Road, so a global spelling fix would break it).
+            if "rename" in run_patch:
+                renames = {str(k).upper(): str(v)
+                           for k, v in run_patch["rename"].items()}
+                intermediate_streets = [
+                    renames.get(s.upper(), s) for s in intermediate_streets
+                ]
+                constraint_lines = [
+                    renames.get(s.upper(), s) for s in constraint_lines
+                ]
 
             # Apply street removals from patches
             if "remove" in run_patch:
@@ -664,23 +688,12 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                     s for s in intermediate_streets
                     if s.upper().replace("\u2019", "'") not in to_remove
                 ]
+                constraint_lines = [
+                    s for s in constraint_lines
+                    if s.upper().replace("\u2019", "'") not in to_remove
+                ]
                 if len(intermediate_streets) < before:
                     print(f"  [Patch] Removed {before - len(intermediate_streets)} streets")
-
-            waypoint_nodes = build_waypoints_from_streets(
-                G, intermediate_streets, street_to_nodes,
-                (start_lat, start_lon), (end_lat, end_lon),
-            )
-
-            # Inject forced waypoints from patches
-            if "force_waypoints" in run_patch:
-                import osmnx as ox
-                for wp in run_patch["force_waypoints"]:
-                    nid = ox.distance.nearest_nodes(G, wp["lon"], wp["lat"])
-                    waypoint_nodes.append(nid)
-                print(f"  [Patch] Injected {len(run_patch['force_waypoints'])} forced waypoints")
-
-            print(f"  {len(waypoint_nodes)} intermediate waypoints")
 
             # Exempt-turns patch: lets a run explicitly whitelist a (from, via, to)
             # triple that OSM marks as prohibited but is legal for taxis/PSVs.
@@ -708,23 +721,71 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 print(f"  [Patch] {len(exempted_turns)} turns exempted")
                 run_prohibited_turns = set(prohibited_turns) - exempted_turns
 
-            def _route_fn(G, o, d, wps):
-                return get_constrained_route(G, o, d, wps, prohibited_turns=run_prohibited_turns, intermediate_streets=intermediate_streets)
-
-            def _validate_fn(G, nodes, o, d, turns, streets, cfg, wps, exempted_turns=None):
+            def _validate_fn(G, nodes, o, d, turns, streets, cfg, wps, exempted_turns=None,
+                             constraints=None):
                 return validate_route(
                     G, nodes, o, d, turns, streets, cfg,
                     waypoint_nodes=wps, exempted_turns=exempted_turns,
+                    constraints=constraints,
                 )
 
-            route_nodes, validation, corrections = correct_and_validate(
-                G, start_node, end_node, waypoint_nodes,
-                intermediate_streets, run_prohibited_turns, street_to_nodes,
-                route_fn=_route_fn,
-                validate_fn=_validate_fn,
-                config=run_config,
-                exempted_turns=exempted_turns or None,
+            # ----- Ordered-constraint A* (one search per run) -----
+            compiled = compile_constraints(
+                constraint_lines, street_index_pure,
+                junction_index=junction_index, G=G,
+                spelling_fixes=load_street_spelling_fixes(),
             )
+            if compiled.gaps:
+                print(f"  [compile] {len(compiled.gaps)} gap(s): {compiled.gaps[:4]}")
+            route_nodes, fwd_route_meta = route_ordered_with_ladder(
+                G, start_node, end_node, compiled.constraints,
+                prohibited_turns=run_prohibited_turns,
+                street_to_nodes=street_index_pure,
+                compute_optimum=True,
+            )
+            # A hard constraint the ladder had to demote is a hard gap: the
+            # route exists, but it provably does not drive the Blue Book
+            # sequence. The gate fails those. Demoted *soft* constraints are
+            # different in kind — they were low-confidence guesses (a ring
+            # located from context, a word-removal match) that the search
+            # proved unsatisfiable, i.e. our resolution was wrong, not the
+            # route. They are excluded from the ordered metric exactly like
+            # compile-time gaps, and stay on the record in
+            # ``demoted_constraints``.
+            demoted_set = {tuple(d) for d in
+                           (fwd_route_meta.get("demoted_constraints") or [])}
+            run_config["hard_gaps"] = sum(
+                1 for _raw, src in demoted_set if src in HARD_SOURCES
+            )
+            enforced_constraints = [
+                c for c in compiled.constraints
+                if (c.raw, c.source) not in demoted_set
+            ]
+            corrections = []
+            validation = None
+            waypoint_nodes = []
+            full_order_metrics = {}
+            if route_nodes and len(route_nodes) >= 2:
+                waypoint_nodes = constraint_waypoints(
+                    G, route_nodes, compiled.constraints)
+                # The *gate* is measured over the enforced constraints —
+                # demoted low-confidence guesses are explicit gaps, not
+                # fidelity misses. The *reported* metric is measured over
+                # every compiled constraint, so it stays falsifiable: a
+                # shortest_path fallback must score near zero, not a vacuous
+                # 1.0 against an empty enforced set.
+                validation = _validate_fn(
+                    G, route_nodes, start_node, end_node,
+                    run_prohibited_turns, intermediate_streets,
+                    run_config, None, exempted_turns or None,
+                    constraints=enforced_constraints,
+                )
+                _, full_order_metrics = check_constraint_order(
+                    G, route_nodes, compiled.constraints)
+            print(f"  [{fwd_route_meta.get('routing_mode')}] "
+                  f"{fwd_route_meta.get('max_idx')}/{fwd_route_meta.get('constraints_total')} constraints, "
+                  f"{len(fwd_route_meta.get('demoted_constraints') or [])} demoted, "
+                  f"{fwd_route_meta.get('states_explored')} states")
 
             if not route_nodes or len(route_nodes) < 2:
                 print(f"  ERROR: No route produced for Run {run_id}")
@@ -746,22 +807,15 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 print(f"  Corrections applied: {len(corrections)}")
 
             # ----- Reverse route (same treatment) -----
-            reverse_streets = list(reversed(intermediate_streets))
-            reverse_waypoints = build_waypoints_from_streets(
-                G, reverse_streets, street_to_nodes,
-                (end_lat, end_lon), (start_lat, start_lon),
-            )
-
-            def _route_fn_rev(G, o, d, wps):
-                return get_constrained_route(G, o, d, wps, prohibited_turns=run_prohibited_turns, intermediate_streets=reverse_streets)
-
-            rev_route_nodes, rev_validation, rev_corrections = correct_and_validate(
-                G, end_node, start_node, reverse_waypoints,
-                reverse_streets, run_prohibited_turns, street_to_nodes,
-                route_fn=_route_fn_rev,
-                validate_fn=_validate_fn,
-                config=run_config,
-                exempted_turns=exempted_turns or None,
+            # The reverse of a Blue Book run is not officially prescribed;
+            # reversing the constraint sequence is the best available
+            # approximation, and the ladder absorbs the one-ways that make a
+            # literal reversal illegal.
+            rev_constraints = list(reversed(compiled.constraints))
+            rev_route_nodes, rev_route_meta = route_ordered_with_ladder(
+                G, end_node, start_node, rev_constraints,
+                prohibited_turns=run_prohibited_turns,
+                street_to_nodes=street_index_pure,
             )
 
             if not rev_route_nodes or len(rev_route_nodes) < 2:
@@ -854,6 +908,17 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 "legal": validation.is_legal,
                 "is_direct": validation.is_direct,
                 "street_coverage": validation.coverage_metrics.get("coverage"),
+                # Ordered traversal of the Blue Book sequence — the Knowledge
+                # standard, measured over EVERY compiled constraint (including
+                # any the ladder demoted), so the figure cannot be inflated by
+                # the router's own retreat. `street_coverage` above says the
+                # streets were touched; these say they were driven in order.
+                "ordered_coverage": full_order_metrics.get("ordered_coverage"),
+                "strict_ordered": full_order_metrics.get("strict_ordered"),
+                # The constraint the in-order walk stalled on. Usually the
+                # single root cause behind everything after it being missed.
+                "order_first_gap": full_order_metrics.get("first_gap"),
+                "order_missing": full_order_metrics.get("missing"),
                 "corrections": len(corrections),
                 # Legs the router abandoned. Non-zero means the geometry has a
                 # gap even though a route was produced.
@@ -861,17 +926,48 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 "truncated_legs": fwd_meta.get("truncated_legs", 0),
                 "fwd_distance_m": fwd_distance,
                 "rev_distance_m": rev_distance,
+                # Geometry identity, so the regression harness can see a route
+                # change without the baseline having to carry the geometry.
+                "node_count": len(route_nodes),
+                "route_hash": hash_nodes(route_nodes),
                 # Preflight signal
                 "preflight_ok": pre.ok,
                 "preflight_warnings": pre.warnings,
                 "preflight_reasons": pre.reasons,
                 "start_snap_m": pre.start_snap_m,
                 "end_snap_m": pre.end_snap_m,
+                "start_district_m": pre.start_district_m,
+                "end_district_m": pre.end_district_m,
                 "unresolved_streets": pre.unresolved_streets,
                 # Patch applied?
                 "patched": bool(run_patch),
                 "exempted_turn_count": len(exempted_turns) if exempted_turns else 0,
             }
+
+            optimum = fwd_route_meta.get("ordered_optimum_m")
+            qa_results[str(run_id)].update({
+                # Which rung of the degradation ladder produced the route,
+                # and what was given up on the way down.
+                "routing_mode": fwd_route_meta.get("routing_mode"),
+                "rev_routing_mode": rev_route_meta.get("routing_mode"),
+                "demoted_constraints": fwd_route_meta.get("demoted_constraints") or [],
+                "hard_gaps": run_config.get("hard_gaps", 0),
+                "constraint_gaps": compiled.gaps,
+                "constraint_sources": compiled.source_histogram(),
+                "hit_state_cap": bool(fwd_route_meta.get("hit_state_cap")),
+                "states_explored": fwd_route_meta.get("states_explored"),
+                # Honest wastefulness: route length over the shortest route
+                # that satisfies the same constraint sequence. Directness
+                # ratio punishes Blue Book geometry; this doesn't.
+                "ordered_optimum_m": optimum,
+                "excess_over_ordered_optimum": (
+                    round(fwd_distance / optimum, 3)
+                    if optimum and fwd_distance else None
+                ),
+                # Gyratory laps are reported, not silently spliced away —
+                # the legacy `_collapse_revisits` mutation is gone.
+                "ring_laps": _count_ring_laps(G, route_nodes),
+            })
 
             # GeoJSON features (optional)
             if export_geojson:
@@ -910,6 +1006,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     # Provenance: which graph produced this, so a change in the routes can be
     # attributed rather than guessed at.
     qa_results["_provenance"] = {
+        "qa_schema_version": QA_SCHEMA_VERSION,
+        "routing_mode": routing_mode,
         "generated_at": int(time.time()),
         "network_type": network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive"),
         "graph_nodes": G.number_of_nodes(),

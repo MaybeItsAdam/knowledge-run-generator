@@ -34,6 +34,11 @@ class ValidationResult:
     is_covered: bool = True
     coverage_metrics: dict = field(default_factory=dict)
 
+    # Ordered Blue Book traversal — the Knowledge standard. Reported but not
+    # yet gating; see `validate_route`.
+    is_ordered: bool = True
+    order_metrics: dict = field(default_factory=dict)
+
     has_sane_detours: bool = True
     detour_violations: list = field(default_factory=list)
 
@@ -290,7 +295,7 @@ def check_waypoint_detours(G, route_nodes, waypoint_nodes, origin_node, dest_nod
 
 
 def check_directness(G, route_nodes, origin_node, dest_node,
-                     max_deviation_ratio=1.8, max_lateral_offset_m=800):
+                     max_deviation_ratio=None, max_lateral_offset_m=None):
     """
     Two-part directness check:
 
@@ -298,10 +303,14 @@ def check_directness(G, route_nodes, origin_node, dest_node,
     2. Max lateral offset — max perpendicular distance from any route point
        to the origin→destination line.
 
-    Thresholds are adaptive by straight-line distance:
+    Default thresholds are adaptive by straight-line distance:
       - <1 km   → ratio 2.5, offset 500 m
       - 1–3 km  → ratio 1.8, offset 800 m
       - >3 km   → ratio 1.8, offset 960 m
+
+    An *explicit* ``max_deviation_ratio`` / ``max_lateral_offset_m`` wins at
+    every distance. The <1 km band used to hard-code its thresholds, which
+    made a ``run_specific_fixes.json`` patch on a short run a silent no-op.
 
     Returns (is_direct, metrics_dict).
     """
@@ -334,16 +343,17 @@ def check_directness(G, route_nodes, origin_node, dest_node,
             max_offset = offset_m
             worst_idx = i
 
-    # Adaptive thresholds
+    # Adaptive defaults; explicit overrides win at every distance.
     if straight_dist < 1000:
-        eff_ratio = 2.5
-        eff_offset = 500
+        eff_ratio = max_deviation_ratio if max_deviation_ratio is not None else 2.5
+        eff_offset = max_lateral_offset_m if max_lateral_offset_m is not None else 500
     elif straight_dist < 3000:
-        eff_ratio = max_deviation_ratio
-        eff_offset = max_lateral_offset_m
+        eff_ratio = max_deviation_ratio if max_deviation_ratio is not None else 1.8
+        eff_offset = max_lateral_offset_m if max_lateral_offset_m is not None else 800
     else:
-        eff_ratio = max_deviation_ratio
-        eff_offset = max_lateral_offset_m * 1.2
+        eff_ratio = max_deviation_ratio if max_deviation_ratio is not None else 1.8
+        eff_offset = (max_lateral_offset_m if max_lateral_offset_m is not None
+                      else 800 * 1.2)
 
     is_direct = ratio <= eff_ratio and max_offset <= eff_offset
 
@@ -366,6 +376,217 @@ def check_directness(G, route_nodes, origin_node, dest_node,
 # index and the corrector, so the coverage check can't disagree with routing
 # about whether a street was traversed.
 from .aliases import normalise as _normalise_street
+from .aliases import _iter_names
+
+
+def _edge_name_set(edge_bundle) -> frozenset:
+    """Every normalised name attached to a node pair.
+
+    Two deliberate widenings over :func:`_extract_route_streets`, which reads
+    ``name[0]`` off the shortest parallel edge only:
+
+      * all of ``name``/``alt_name``/``old_name``/``official_name``/``ref`` are
+        included, so an edge tagged ``["Marylebone Road", "A501"]`` matches the
+        Blue Book whichever of the two it names,
+      * names are unioned across the parallel edges of the bundle rather than
+        taken from the shortest one. Parallel edges between the same node pair
+        are the same stretch of road modelled twice; picking the shortest picks
+        a service stub's name over the mainline's often enough to matter.
+    """
+    if not edge_bundle:
+        return frozenset()
+    names = set()
+    for data in edge_bundle.values():
+        for raw in _iter_names(data):
+            norm = _normalise_street(raw)
+            if norm:
+                names.add(norm)
+    return frozenset(names)
+
+
+def _route_edge_names(G, route_nodes) -> list:
+    """Name sets for each traversed edge, in route order."""
+    return [
+        _edge_name_set(G.get_edge_data(route_nodes[i], route_nodes[i + 1]))
+        for i in range(len(route_nodes) - 1)
+    ]
+
+
+def _lcs_length(expected, route_name_sets):
+    """Longest subsequence of ``expected`` traversed in order by the route.
+
+    Standard LCS DP, except a position matches by set membership rather than
+    equality — a route edge carries several names (``name``, ``ref``, ...) and
+    any of them satisfying the expected street counts.
+    """
+    m = len(route_name_sets)
+    prev = [0] * (m + 1)
+    for street in expected:
+        cur = [0] * (m + 1)
+        for j in range(1, m + 1):
+            if street in route_name_sets[j - 1]:
+                cur[j] = prev[j - 1] + 1
+            else:
+                cur[j] = max(prev[j], cur[j - 1])
+        prev = cur
+    return prev[m]
+
+
+def check_street_order(G, route_nodes, expected_streets, min_coverage=1.0):
+    """Verify the route traverses the Blue Book streets *in the given order*.
+
+    This is the Knowledge standard: a run is the prescribed sequence of
+    streets, walked in sequence. :func:`check_street_coverage` answers the much
+    weaker question "were these streets touched at all, in any order" — it
+    drops the route into a ``set`` before comparing, so a route that visits
+    every street backwards scores 1.0.
+
+    Two numbers come back, because they answer different questions and the
+    difference between them is the whole diagnosis:
+
+    ``ordered_coverage`` is the longest ordered subsequence, as a fraction. One
+    genuinely-absent street costs exactly one place. This is the headline
+    metric and the one worth diffing across builds, because it degrades
+    smoothly instead of cliff-edging.
+
+    ``strict_ordered`` is a greedy walk that stops dead at the first street it
+    cannot match. It answers "could a driver follow this route through the run
+    card without ever skipping a line", which is the real-world question, but a
+    single unresolvable junction name near the start takes the whole tail with
+    it. Use it for triage, not for tracking.
+
+    They agree exactly at 1.0, which is what ``min_coverage`` gates on by
+    default.
+
+    Matching is on exact normalised names. The bidirectional substring test in
+    :func:`check_street_coverage` (``s in rs or rs in s``) inflates coverage —
+    it lets ``HIGH STREET`` claim a traversal of ``HIGH STREET KENSINGTON`` —
+    and leaves no anchor position to order by once it fires.
+
+    Returns ``(is_ordered, metrics)``.
+    """
+    expected = [_normalise_street(s) for s in expected_streets if s]
+    expected = [s for s in expected if s]
+    # Consecutive repeats are one requirement, not two. Non-consecutive repeats
+    # are kept: "STRAND, ALDWYCH, STRAND" is a real Blue Book shape, and an
+    # ordered check is the only one that can express it at all.
+    deduped = [s for i, s in enumerate(expected) if i == 0 or expected[i - 1] != s]
+
+    if not deduped:
+        return True, {
+            "ordered_coverage": 1.0,
+            "strict_ordered": 1.0,
+            "matched": 0,
+            "expected": 0,
+            "missing": [],
+            "first_gap": None,
+        }
+
+    edge_names = _route_edge_names(G, route_nodes)
+    # Consecutive edges of the same street are one traversal; collapsing them
+    # keeps the LCS table small without changing the answer.
+    collapsed = [
+        s for i, s in enumerate(edge_names) if i == 0 or edge_names[i - 1] != s
+    ]
+
+    matched = _lcs_length(deduped, collapsed)
+
+    # Greedy walk, for `strict_ordered` and the actionable stall point.
+    idx = 0
+    for names in collapsed:
+        while idx < len(deduped) and deduped[idx] in names:
+            idx += 1
+        if idx >= len(deduped):
+            break
+
+    traversed = set().union(*collapsed) if collapsed else set()
+    missing = [s for s in deduped if s not in traversed]
+
+    coverage = matched / len(deduped)
+    return coverage >= min_coverage, {
+        "ordered_coverage": round(coverage, 3),
+        "strict_ordered": round(idx / len(deduped), 3),
+        "matched": matched,
+        "expected": len(deduped),
+        # Streets absent from the route entirely, in any order. Distinct from
+        # the LCS shortfall, which also counts streets present but out of order.
+        "missing": missing,
+        # Where the greedy walk stopped — usually the single root cause behind
+        # a long `missing` list.
+        "first_gap": deduped[idx] if idx < len(deduped) else None,
+    }
+
+
+def check_constraint_order(G, route_nodes, constraints, min_coverage=1.0):
+    """Ordered-traversal metrics over *compiled constraints* rather than raw
+    street names.
+
+    :func:`check_street_order` treats every Blue Book line as a street name,
+    so a junction line ("HIGHBURY CORNER") or a gyratory can never match an
+    edge and permanently depresses the score even when the route drives the
+    run perfectly. Constraints carry the distinction: a ``STREET`` position
+    matches an edge whose name set contains its key, a ``NODE`` position
+    matches arriving at any member node. Lines that resolved to nothing are
+    explicit gaps upstream — they produce no constraint and are not punished
+    here (the ``hard_gaps`` gate covers what was *demoted*).
+
+    Returns ``(is_ordered, metrics)`` with the same metric names as
+    :func:`check_street_order`.
+    """
+    C = list(constraints or [])
+    if not C:
+        return True, {
+            "ordered_coverage": 1.0,
+            "strict_ordered": 1.0,
+            "matched": 0,
+            "expected": 0,
+            "missing": [],
+            "first_gap": None,
+        }
+
+    edge_names = _route_edge_names(G, route_nodes)
+
+    def matches(constraint, j):
+        if constraint.kind == "STREET":
+            return constraint.key in edge_names[j]
+        return route_nodes[j + 1] in constraint.key
+
+    m = len(edge_names)
+
+    # LCS over (constraints × edges), membership-matched.
+    prev = [0] * (m + 1)
+    for c in C:
+        cur = [0] * (m + 1)
+        for j in range(1, m + 1):
+            if matches(c, j - 1):
+                cur[j] = prev[j - 1] + 1
+            else:
+                cur[j] = max(prev[j], cur[j - 1])
+        prev = cur
+    matched = prev[m]
+
+    # Greedy walk for the strict metric and the stall point.
+    idx = 0
+    for j in range(m):
+        while idx < len(C) and matches(C[idx], j):
+            idx += 1
+        if idx >= len(C):
+            break
+
+    missing = []
+    for c in C:
+        if not any(matches(c, j) for j in range(m)):
+            missing.append(c.raw)
+
+    coverage = matched / len(C)
+    return coverage >= min_coverage, {
+        "ordered_coverage": round(coverage, 3),
+        "strict_ordered": round(idx / len(C), 3),
+        "matched": matched,
+        "expected": len(C),
+        "missing": missing,
+        "first_gap": C[idx].raw if idx < len(C) else None,
+    }
 
 
 def _extract_route_streets(G, route_nodes):
@@ -512,7 +733,8 @@ def check_run_shape(
 
 def validate_route(G, route_nodes, origin_node, dest_node,
                    prohibited_turns=None, expected_streets=None,
-                   config=None, waypoint_nodes=None, exempted_turns=None):
+                   config=None, waypoint_nodes=None, exempted_turns=None,
+                   constraints=None):
     """
     Run all three checks on a route.
 
@@ -520,7 +742,11 @@ def validate_route(G, route_nodes, origin_node, dest_node,
       - max_deviation_ratio
       - max_lateral_offset_m
       - min_street_coverage
+      - min_ordered_coverage
       - skip_directness_check  (bool)
+      - hard_gaps  (int) — number of hard constraints the router had to
+        demote to produce this route. Anything > 0 fails the run: the route
+        exists but is not the Blue Book run.
 
     Returns a :class:`ValidationResult`.
     """
@@ -539,15 +765,28 @@ def validate_route(G, route_nodes, origin_node, dest_node,
     else:
         result.is_direct, result.directness_metrics = check_directness(
             G, route_nodes, origin_node, dest_node,
-            max_deviation_ratio=config.get("max_deviation_ratio", 1.8),
-            max_lateral_offset_m=config.get("max_lateral_offset_m", 800),
+            max_deviation_ratio=config.get("max_deviation_ratio"),
+            max_lateral_offset_m=config.get("max_lateral_offset_m"),
         )
 
-    # C — Street coverage
+    # C — Street coverage (unordered) and ordered traversal. When compiled
+    # constraints are available they are the authority on ordering: they can
+    # express junctions and gyratories as NODE positions, which a street-name
+    # walk structurally cannot match.
     if expected_streets:
         result.is_covered, result.coverage_metrics = check_street_coverage(
             G, route_nodes, expected_streets,
             min_coverage=config.get("min_street_coverage", 0.6),
+        )
+    if constraints is not None:
+        result.is_ordered, result.order_metrics = check_constraint_order(
+            G, route_nodes, constraints,
+            min_coverage=config.get("min_ordered_coverage", 1.0),
+        )
+    elif expected_streets:
+        result.is_ordered, result.order_metrics = check_street_order(
+            G, route_nodes, expected_streets,
+            min_coverage=config.get("min_ordered_coverage", 1.0),
         )
     if waypoint_nodes:
         result.has_sane_detours, result.detour_violations = check_waypoint_detours(
@@ -557,6 +796,12 @@ def validate_route(G, route_nodes, origin_node, dest_node,
         result.has_sane_detours = True
         result.detour_violations = []
 
-    # Coverage is now a soft metric, as the semantic router naturally handles expected streets
-    result.passed = result.is_legal and result.is_direct and result.has_sane_detours
+    # The gate is the Knowledge standard: the route must be legal, must walk
+    # the Blue Book streets in order, and must not have bought its ordering by
+    # demoting hard constraints. Directness is *recorded* for triage but not
+    # gated — a Knowledge run is by definition not the straight line, and the
+    # honest wastefulness metric is `excess_over_ordered_optimum`, computed
+    # against the ordered optimum rather than the crow-flies line.
+    hard_gaps = int(config.get("hard_gaps") or 0)
+    result.passed = result.is_legal and result.is_ordered and hard_gaps == 0
     return result

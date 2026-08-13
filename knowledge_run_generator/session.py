@@ -23,15 +23,17 @@ from pathlib import Path
 from typing import Any
 
 from .aliases import AliasIndex, load_or_build_alias_index
+from .cache import cache_dir as krg_cache_dir
 from .caller import generate_call
+from .constraints import Constraint
 from .gazetteer import Gazetteer, load_knowledge_pois, preflight_run
 from .geocoder import geocode_and_snap
 from .router import (
     _extract_route_metadata,
-    get_constrained_route,
     get_route,
     load_graph,
     nodes_to_coords_geometry,
+    route_ordered_with_ladder,
 )
 
 
@@ -88,8 +90,9 @@ class Session:
         the richer ``{"lat":..., "lon":..., "on_street":..., "approach_from":...}``
         form.
     cache_dir
-        Where to keep derived indexes (alias pickle, etc.). Defaults to
-        ``/tmp/app_cache``.
+        Where to keep derived indexes (alias pickle, etc.). Defaults to the
+        shared persistent cache (``KRG_CACHE_DIR`` or
+        ``~/.cache/knowledge-run-generator``).
     knowledge_pois_file
         Geocoded Knowledge Points List to resolve place names against.
         Defaults to the generator's ``constants/knowledge_pois.json`` if it
@@ -100,12 +103,12 @@ class Session:
         self,
         graph=None,
         poi_overrides: dict | str | Path | None = None,
-        cache_dir: str | Path = "/tmp/app_cache",
+        cache_dir: str | Path | None = None,
         build_indexes: bool = True,
         use_osm_pois: bool = True,
         knowledge_pois_file: str | Path | None = None,
     ):
-        self._cache_dir = Path(cache_dir)
+        self._cache_dir = Path(cache_dir) if cache_dir is not None else krg_cache_dir()
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._graph = graph
         self._alias_index: AliasIndex | None = None
@@ -225,10 +228,23 @@ class Session:
         )
 
         if via:
-            route_nodes, _meta = get_constrained_route(
-                G, start_node, end_node, [],
+            # Ad-hoc via streets are *requests*, not Blue Book scripture:
+            # every constraint is soft, so a name that resolves nowhere (or
+            # can't legally be reached in sequence) is demoted by the ladder
+            # instead of failing the whole query.
+            constraints = []
+            street_index = self.alias_index.canonical_to_nodes
+            for name in via:
+                canonical = self.alias_index.resolve(str(name))
+                if canonical is None:
+                    continue
+                constraints.append(
+                    Constraint("STREET", canonical, str(name), "exact", False)
+                )
+            route_nodes, _meta = route_ordered_with_ladder(
+                G, start_node, end_node, constraints,
                 prohibited_turns=prohibited_turns,
-                intermediate_streets=list(via),
+                street_to_nodes=street_index,
             )
         else:
             route_nodes = get_route(

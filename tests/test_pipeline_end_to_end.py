@@ -11,6 +11,7 @@ from the fixture data is a test failure, not a silent network call.
 """
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,15 +49,39 @@ class PipelineEndToEndTests(unittest.TestCase):
             "load_graph": rp.load_graph,
             "load_turn_restrictions": rp.load_turn_restrictions,
             "geocode_and_snap": rp.geocode_and_snap,
+            "load_cached_pois": rp.load_cached_pois,
         }
         rp.load_graph = lambda network_type=None, **kw: self.graph
         rp.load_turn_restrictions = lambda G, cache_dir=None: set()
         rp.geocode_and_snap = self._offline_only_resolve
+        # The real constants/osm_pois.json must not leak into the fixture
+        # graph: its real-London coordinates are kilometres from the synthetic
+        # geometry and would hijack the street-tier resolution this test
+        # exercises. Emptying the harvest triggers the pipeline's empty-OSM
+        # guard, so opt out of it explicitly rather than weakening the check.
+        rp.load_cached_pois = lambda *candidates: {}
+        self._old_allow_no_osm = os.environ.get("KRG_ALLOW_NO_OSM")
+        os.environ["KRG_ALLOW_NO_OSM"] = "1"
+        # Pin the Points List to the fixture explicitly. Relying on the
+        # output-directory candidate meant a test that emptied the file fell
+        # through to the real constants/knowledge_pois.json and resolved
+        # against 5,500 real London POIs — it still passed, but only because
+        # real coordinates land kilometres from the synthetic graph.
+        self._old_pois = os.environ.get("KRG_KNOWLEDGE_POIS")
+        os.environ["KRG_KNOWLEDGE_POIS"] = str(self.tmp / "knowledge_pois.json")
         self.geocoder_calls = []
 
     def tearDown(self):
         for name, original in self._patched.items():
             setattr(rp, name, original)
+        if self._old_allow_no_osm is None:
+            os.environ.pop("KRG_ALLOW_NO_OSM", None)
+        else:
+            os.environ["KRG_ALLOW_NO_OSM"] = self._old_allow_no_osm
+        if self._old_pois is None:
+            os.environ.pop("KRG_KNOWLEDGE_POIS", None)
+        else:
+            os.environ["KRG_KNOWLEDGE_POIS"] = self._old_pois
         self._tmp.cleanup()
 
     def _offline_only_resolve(self, address, G, poi_overrides=None, gazetteer=None):
@@ -140,6 +165,19 @@ class PipelineEndToEndTests(unittest.TestCase):
         self.assertEqual(qa["1"]["status"], "failed")
         self.assertIn("geocode", qa["1"]["failure_reason"])
         self.assertIn("MANOR HOUSE STATION N4", self.geocoder_calls)
+
+    def test_run_records_ordered_blue_book_coverage(self):
+        """The metric the Knowledge standard is judged on has to survive the
+        whole pipeline, not just exist in the validator."""
+        _runs, qa = self._run()
+        record = qa["1"]
+        self.assertIn("ordered_coverage", record)
+        self.assertIsNotNone(record["ordered_coverage"])
+        # The fixture graph lays Run 1's streets out in Blue Book order, so a
+        # route across it should traverse them in order.
+        self.assertGreaterEqual(record["ordered_coverage"], 0.9)
+        self.assertTrue(record["route_hash"], "route_hash must be populated")
+        self.assertGreater(record["node_count"], 0)
 
 
 if __name__ == "__main__":

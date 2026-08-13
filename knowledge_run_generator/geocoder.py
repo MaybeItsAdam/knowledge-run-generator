@@ -10,6 +10,7 @@ from sklearn.neighbors import BallTree
 from pathlib import Path
 import json
 
+from .cache import cache_path
 from .gazetteer import Gazetteer, semantic_snap
 
 _graph_trees = {}
@@ -31,7 +32,7 @@ _geocode_throttled = RateLimiter(
 # Disk-backed cache so successful lookups survive across invocations and
 # subsequent runs don't re-hit Nominatim. Only successful (lat, lon) results
 # are persisted; misses/errors are not cached so they can be retried later.
-_GEOCODE_CACHE_PATH = Path("/tmp/app_cache/geocode_cache.json")
+_GEOCODE_CACHE_PATH = cache_path("geocode_cache.json")
 _geocode_cache: dict[str, tuple[float, float]] = {}
 
 

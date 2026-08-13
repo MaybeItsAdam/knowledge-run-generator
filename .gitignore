@@ -112,10 +112,17 @@ secrets.json
 *.pem
 *.key
 
-# Generated output files (pipeline artefacts)
-constants/
+# Generated output files (pipeline artefacts). Hand-maintained INPUTS and the
+# committed OSM harvest snapshot (the tier-3 gazetteer) are un-ignored so a
+# fresh clone reproduces enrichment and endpoint resolution. (constants/* not
+# constants/ — git cannot re-include files under an excluded directory.)
+constants/*
+!constants/london_boroughs.geojson
+!constants/yellow_badge_sectors.json
+!constants/osm_pois.json
 output/
 *.geojson
+!constants/london_boroughs.geojson
 !blue_book_demo/poi_overrides.json
 !blue_book_demo/run_specific_fixes.json
 
@@ -123,6 +130,10 @@ output/
 # in case someone sets cache_dir to the project root).
 app_cache/
 *.graphml
+# ...except the hand-built test fixtures. These are small (~23 KB), synthetic,
+# and required for the end-to-end test to run at all — without them a fresh
+# clone can't load the fixture and the whole test class errors out.
+!tests/fixtures/*.graphml
 alias_index.pkl
 street_index.pkl
 turn_restrictions.json

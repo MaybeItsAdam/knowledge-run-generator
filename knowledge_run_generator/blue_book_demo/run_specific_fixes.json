@@ -1,23 +1,28 @@
 {
-    "4": {
-        "remove": [
-            "SEVEN DIALS",
-            "ENDELL STREET",
-            "SHELTON STREET",
-            "MERCER STREET",
-            "EXETER STREET",
-            "BOW STREET",
-            "WELLINGTON STREET",
-            "CATHERINE STREET",
-            "EARLHAM STREET",
-            "SHAFTESBURY AVENUE",
-            "TENISON WAY"
-        ]
-    },
-    "5": {
-        "remove": [
-            "BISHOP'S BRIDGE",
-            "HARROW ROAD"
-        ]
+  "4": {
+    "remove": [
+      "SEVEN DIALS",
+      "ENDELL STREET",
+      "SHELTON STREET",
+      "MERCER STREET",
+      "EXETER STREET",
+      "BOW STREET",
+      "WELLINGTON STREET",
+      "CATHERINE STREET",
+      "EARLHAM STREET",
+      "SHAFTESBURY AVENUE",
+      "TENISON WAY"
+    ]
+  },
+  "5": {
+    "remove": [
+      "BISHOP'S BRIDGE",
+      "HARROW ROAD"
+    ]
+  },
+  "153": {
+    "rename": {
+      "KING HENRY'S ROAD": "King Henry's Walk"
     }
+  }
 }

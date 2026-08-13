@@ -4,15 +4,18 @@ import sys
 import geopandas as gpd
 import networkx as nx
 import osmnx as ox
+from heapq import heappush, heappop
+from itertools import count as _tie_counter
 from pathlib import Path
 from shapely.geometry import Point, LineString
 
-from .aliases import normalise as _normalise_street_name
+from .aliases import normalise as _normalise_street_name, _iter_names
+from .cache import cache_dir, cache_path
 
-CACHE_DIR = Path("/tmp/app_cache")
+CACHE_DIR = cache_dir()
 GRAPH_FILENAME_TEMPLATE = "london_{network_type}_v3.graphml"
 
-ox.settings.cache_folder = "/tmp/ox_cache"
+ox.settings.cache_folder = str(cache_dir() / "ox_cache")
 
 SERVICE_HIGHWAYS = {
     "service",
@@ -89,9 +92,8 @@ def load_graph(place_name="Greater London, UK", network_type=None):
     Load the street network graph for the given place name.
     """
     resolved_network_type = network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive")
-    CACHE_DIR.mkdir(exist_ok=True)
     safe_network_type = str(resolved_network_type).replace("/", "_").replace(" ", "_")
-    graph_path = CACHE_DIR / GRAPH_FILENAME_TEMPLATE.format(network_type=safe_network_type)
+    graph_path = cache_path(GRAPH_FILENAME_TEMPLATE.format(network_type=safe_network_type))
 
     if graph_path.exists():
         print(f"Loading graph from cache: {graph_path}")
@@ -142,331 +144,478 @@ def get_route(G, origin_point, destination_point, orig_node=None, dest_node=None
 
 
 # ---------------------------------------------------------------------------
-# Constrained multi-leg routing
+# Ordered-constraint routing (ROADMAP Stage 3)
 # ---------------------------------------------------------------------------
 
-def get_constrained_route(G, origin_node, dest_node, waypoint_nodes,
-                          prohibited_turns=None, intermediate_streets=None):
+# Memoised edge-name sets. Keyed by graph identity so tests with several
+# small graphs don't cross-contaminate; the pipeline holds one graph for its
+# whole lifetime, so in practice this is a single-graph cache.
+_edge_name_cache: dict = {}
+
+
+def edge_name_set(G, u, v) -> frozenset:
+    """Every normalised name attached to the (u, v) node pair.
+
+    Unions across parallel edges and reads every name tag
+    (``name``/``alt_name``/``old_name``/``official_name``/``ref``) — the same
+    semantics the validator's ordered-coverage check uses, so the router and
+    the metric cannot disagree about whether an edge is the named street.
     """
-    Compute the shortest-distance route from *origin_node* to *dest_node*
-    passing through *waypoint_nodes* in order.
+    key = (id(G), u, v)
+    cached = _edge_name_cache.get(key)
+    if cached is not None:
+        return cached
+    names = set()
+    for data in (G.get_edge_data(u, v) or {}).values():
+        for raw in _iter_names(data):
+            norm = _normalise_street_name(raw)
+            if norm:
+                names.add(norm)
+    result = frozenset(names)
+    _edge_name_cache[key] = result
+    return result
 
-    *prohibited_turns* is an optional set of ``(from, via, to)`` triples
-    (from OSM ``no_*`` / ``only_*`` relations). They are enforced as a
-    transition filter inside the Dijkstra expansion itself — never
-    mutating the graph — so illegal turns cannot appear in the output,
-    and the graph is safe to share across threads and crash-resilient.
 
-    Returns ``(route_nodes, metadata)`` where metadata contains:
-      - total_distance  (metres)
-      - streets_traversed  (ordered unique street names)
+# Multiplier applied to edges that neither advance the constraint sequence
+# nor stay on the street just advanced through. This is a *preference* for
+# staying on Blue Book streets; the hard ordering lives in the goal test.
+CONNECTOR_MULT = 3.0
+
+# Ordered-search state budget. Per *run*, not per leg — the ordered search
+# has no legs.
+MAX_ORDERED_STATES = 400_000
+
+
+def _ordered_edge_cost(edge_data, prev_node=None, next_node=None):
+    """Structural cost of an edge for the ordered search.
+
+    Same shape as :func:`_edge_traversal_cost` minus the backward-progress
+    bias — the ordered search has real constraints, so it does not need (and
+    must not fight) a geometric nudge toward the destination.
     """
-    route, search_stats = _route_through_waypoints(
-        G, origin_node, dest_node, waypoint_nodes,
-        intermediate_streets=intermediate_streets,
-        prohibited_turns=prohibited_turns,
-    )
-    clean = _clean_backtrack(route)
-    clean = _collapse_revisits(clean)
-    metadata = _extract_route_metadata(G, clean)
-    # Legs the search gave up on. Previously both failure modes were silent,
-    # so a route stitched together from partial legs was indistinguishable
-    # from a clean one in the output.
-    metadata.update(search_stats)
-    return clean, metadata
+    length = float(edge_data.get("length", 1.0) or 1.0)
+    penalty = float(edge_data.get("penalty", 0.0) or 0.0)
+    cost = length + penalty
+
+    highways = set(_normalise_tag_values(edge_data.get("highway")))
+    junctions = set(_normalise_tag_values(edge_data.get("junction")))
+
+    if highways & SERVICE_HIGHWAYS:
+        cost += max(30.0, length * 0.35)
+    if highways & LINK_HIGHWAYS:
+        cost += max(18.0, length * 0.18)
+    if "roundabout" in junctions:
+        cost += 12.0
+    if prev_node is not None and next_node is not None and prev_node == next_node:
+        cost += 5000.0
+    return cost
 
 
-def _route_through_waypoints(G, origin_node, dest_node, waypoint_nodes,
-                             intermediate_streets=None,
-                             prohibited_turns=None):
-    """Shortest-distance route leg-by-leg through ordered waypoints, with
-    sequential street discounts.
+def _constraint_anchor_summary(G, constraint, street_to_nodes):
+    """(centroid_lat, centroid_lon, radius_m, node_set|None) for a constraint.
 
-    Returns ``(route_nodes, stats)``. ``stats`` reports legs that failed to
-    reach their target: ``unreachable_legs`` (the search exhausted the queue)
-    and ``truncated_legs`` (it hit the state cap first). Both leave a gap in
-    the route, and both used to pass silently.
+    ``max(0, dist(n, centroid) - radius)`` is an admissible lower bound on the
+    distance from ``n`` to the nearest anchor, and O(1) per state — a full
+    min-over-anchors scan is exact but unaffordable inside the search loop.
     """
-    from heapq import heappush, heappop
-    import itertools
+    if constraint.kind == "NODE":
+        nodes = [n for n in constraint.key if n in G.nodes]
+    else:
+        nodes = [n for n in (street_to_nodes or {}).get(constraint.key, ())
+                 if n in G.nodes]
+    if not nodes:
+        return None
+    lats = [G.nodes[n]["y"] for n in nodes]
+    lons = [G.nodes[n]["x"] for n in nodes]
+    clat = sum(lats) / len(lats)
+    clon = sum(lons) / len(lons)
+    radius = max(_euclid_m(clat, clon, la, lo) for la, lo in zip(lats, lons))
+    node_set = set(nodes) if constraint.kind == "NODE" else None
+    return (clat, clon, radius, node_set)
 
-    # Use the canonical normaliser so the router and the upstream alias index
-    # agree on exactly one form per street — eliminates the need for fuzzy
-    # substring matching below, which produced false discounts (e.g.
-    # "KING STREET" spuriously matching "KINGSWAY").
-    norm_streets = []
-    if intermediate_streets:
-        for s in intermediate_streets:
-            n = _normalise_street_name(s)
-            if n:
-                norm_streets.append(n)
 
-    stages = []
-    for wp in waypoint_nodes:
-        if isinstance(wp, (set, list, tuple)):
-            stages.append(set(wp))
-        else:
-            stages.append({wp})
-    stages.append({dest_node})
+def _euclid_m(lat1, lon1, lat2, lon2):
+    # Equirectangular metres at London's latitude; 0.62 lon scale, floored to
+    # 0.6 for admissibility (matches the legacy heuristic).
+    dx = (lon2 - lon1) * 0.6
+    dy = lat2 - lat1
+    return math.sqrt(dx * dx + dy * dy) * 111_000
 
-    full_route = [origin_node]
-    current_source = origin_node
-    current_street_idx = 0
-    unreachable_legs = 0
-    truncated_legs = 0
 
-    c = itertools.count()
+def get_ordered_route(G, origin_node, dest_node, constraints,
+                      prohibited_turns=None, street_to_nodes=None,
+                      connector_mult=CONNECTOR_MULT,
+                      max_states=MAX_ORDERED_STATES,
+                      corridor_margin_deg=0.008,
+                      pure_length_cost=False):
+    """One ordered-constraint A* over the whole run.
 
-    # Pre-index norm_streets for faster lookup
-    # street_to_indices: name -> list of indices where it appears in the sequence
-    street_to_indices = {}
-    if norm_streets:
-        for idx, s in enumerate(norm_streets):
-            if s not in street_to_indices:
-                street_to_indices[s] = []
-            street_to_indices[s].append(idx)
+    State is ``(node, idx, prev_node)`` where ``idx`` counts satisfied
+    constraints; ``prev_node`` exists so prohibited turn triples can be
+    filtered inside the expansion (and never appear in the output).
 
-    # Cache for edge name normalization (within this run)
-    edge_norm_cache = {}
+    **The goal test is the ordering**: a state terminates the search only
+    when ``node == dest_node`` and ``idx == len(constraints)``. Skipping a
+    constraint is not representable.
 
-    for i, target_set in enumerate(stages):
-        if current_source in target_set:
+    Returns ``(route_nodes | None, info)``. ``info.max_idx`` names the
+    furthest constraint index any explored state reached — on failure, the
+    constraint at that index is the blocker.
+
+    ``pure_length_cost`` runs the identical search with the connector
+    multiplier and structural penalties zeroed; its goal-cost is the ordered
+    optimum used by the ``excess_over_ordered_optimum`` QA metric.
+    """
+    C = list(constraints)
+    K = len(C)
+    dest = G.nodes[dest_node]
+    dest_lat, dest_lon = dest["y"], dest["x"]
+
+    # Anchor summaries per constraint, for the heuristic and the corridor.
+    anchors = [_constraint_anchor_summary(G, c, street_to_nodes) for c in C]
+
+    # Corridor: bbox of origin, dest and every anchor centroid (+ radius),
+    # padded. States outside it are not expanded — Blue Book runs are
+    # corridors by construction, and this is what keeps 26-constraint runs
+    # from flooding Greater London.
+    o = G.nodes[origin_node]
+    lats = [o["y"], dest_lat]
+    lons = [o["x"], dest_lon]
+    for summary in anchors:
+        if summary is None:
             continue
-            
-        # Heuristic for A*: distance to nearest node in target_set
-        # Using a simple mean coordinate for the target_set set to approximate.
-        target_pts = []
-        for tid in target_set:
-            if tid in G.nodes:
-                tn = G.nodes[tid]
-                target_pts.append((tn['y'], tn['x']))
-        
-        target_lat = sum(p[0] for p in target_pts) / len(target_pts) if target_pts else 0
-        target_lon = sum(p[1] for p in target_pts) / len(target_pts) if target_pts else 0
+        clat, clon, radius, _ = summary
+        pad = radius / 111_000.0
+        lats.extend((clat - pad, clat + pad))
+        lons.extend((clon - pad, clon + pad))
+    if corridor_margin_deg is None:
+        # No corridor. The T3 fallback needs this: a run whose prescribed
+        # river crossing is closed (Hammersmith Bridge) can only route via
+        # the next bridge, far outside the origin–destination bbox.
+        def in_corridor(nid):
+            return True
+    else:
+        lat_min = min(lats) - corridor_margin_deg
+        lat_max = max(lats) + corridor_margin_deg
+        lon_min = min(lons) - corridor_margin_deg
+        lon_max = max(lons) + corridor_margin_deg
 
-        # Fast Euclidean heuristic (admissible for shortest distance)
-        def _h(node):
-            if not target_pts: return 0
-            n = G.nodes[node]
-            # 51.5 degrees N: 1 degree lon ~ 69km, 1 degree lat ~ 111km
-            # Ratio is ~0.62. Use 0.6 for admissibility.
-            dx = (n['x'] - target_lon) * 0.6
-            dy = n['y'] - target_lat
-            return math.sqrt(dx*dx + dy*dy) * 111000
+        def in_corridor(nid):
+            n = G.nodes[nid]
+            return lat_min <= n["y"] <= lat_max and lon_min <= n["x"] <= lon_max
 
-        target_latlon = (target_lat, target_lon)
+    h_cache: dict = {}
 
-        def _dist_to_target(node_id):
-            n = G.nodes[node_id]
-            dx = (n['x'] - target_latlon[1]) * 0.6
-            dy = n['y'] - target_latlon[0]
-            return math.sqrt(dx * dx + dy * dy) * 111000
+    def h(nid, idx):
+        key = (nid, idx)
+        cached = h_cache.get(key)
+        if cached is not None:
+            return cached
+        n = G.nodes[nid]
+        value = _euclid_m(n["y"], n["x"], dest_lat, dest_lon)
+        if idx < K:
+            summary = anchors[idx]
+            if summary is not None:
+                clat, clon, radius, _ = summary
+                to_anchor = _euclid_m(n["y"], n["x"], clat, clon) - radius
+                if to_anchor > value:
+                    value = to_anchor
+        h_cache[key] = value
+        return value
 
-        # queue: (priority, dist_from_start, tie-breaker, current_node, current_street_idx, prev_node)
-        queue = [(_h(current_source), 0.0, next(c), current_source, current_street_idx, None)]
-        visited = {(current_source, current_street_idx, None): 0.0}
-        parents = {} # (u, idx, prev_u) -> (prev_u, prev_idx, prev_prev_u)
-        found_target = None # (node, idx, prev_node)
-        
-        states_explored = 0
-        hit_state_cap = False
-        while queue:
-            priority, dist, _, u, s_idx, prev_u = heappop(queue)
-            states_explored += 1
+    # Constraints already satisfied by standing at the origin (a NODE
+    # constraint containing the origin cannot be advanced by an arrival).
+    start_idx = 0
+    while start_idx < K:
+        summary = anchors[start_idx]
+        if (C[start_idx].kind == "NODE" and summary is not None
+                and summary[3] is not None and origin_node in summary[3]):
+            start_idx += 1
+        else:
+            break
 
-            if states_explored > MAX_SEARCH_STATES:
-                # Give up on a runaway search, but record it — see stats below.
-                hit_state_cap = True
+    tie = _tie_counter()
+    start_state = (origin_node, start_idx, None)
+    queue = [(h(origin_node, start_idx), 0.0, next(tie)) + start_state]
+    best = {start_state: 0.0}
+    parents: dict = {}
+
+    states = 0
+    hit_cap = False
+    max_idx = start_idx
+    dest_reached_idx = None
+    goal_state = None
+    goal_cost = None
+
+    while queue:
+        f, g, _, u, idx, prev = heappop(queue)
+        states += 1
+        if states > max_states:
+            hit_cap = True
+            break
+
+        if best.get((u, idx, prev), float("inf")) < g:
+            continue
+
+        if idx > max_idx:
+            max_idx = idx
+        if u == dest_node:
+            # Even short of the goal, the best idx *at the destination* is
+            # the honest blocker signal: `max_idx` alone can reflect a wrong-
+            # instance branch that got further along the sequence somewhere
+            # unreachable, sending the ladder after the wrong victim.
+            if dest_reached_idx is None or idx > dest_reached_idx:
+                dest_reached_idx = idx
+            if idx >= K:
+                goal_state = (u, idx, prev)
+                goal_cost = g
                 break
 
-            if u in target_set:
-                found_target = (u, s_idx, prev_u)
-                break
-            
-            # Since we update visited on push, we only continue if we found a better 
-            # path to this state *since* it was pushed.
-            if visited.get((u, s_idx, prev_u), float('inf')) < dist:
+        stay_key = C[idx - 1].key if (idx > 0 and C[idx - 1].kind == "STREET") else None
+
+        for v in G.successors(u):
+            if prohibited_turns and prev is not None and (prev, u, v) in prohibited_turns:
+                continue
+            if not in_corridor(v):
                 continue
 
-            dist_u_to_target = _dist_to_target(u)
-            
-            for v, edges in G[u].items():
-                # Turn-restriction filter: reject the transition (prev_u, u, v)
-                # directly — no graph mutation, no edge-penalty bookkeeping,
-                # and no risk of leaking state on exception.
-                if (prohibited_turns
-                        and prev_u is not None
-                        and (prev_u, u, v) in prohibited_turns):
-                    continue
-
-                for k, edge_data in edges.items():
-                    length = float(edge_data.get('length', 1.0) or 1.0)
-                    dist_v_to_target = _dist_to_target(v)
-                    
-                    # Get or compute normalised names (shared normaliser)
-                    eid = (u, v, k)
-                    if eid in edge_norm_cache:
-                        edge_norms = edge_norm_cache[eid]
-                    else:
-                        name = edge_data.get('name', '')
-                        if isinstance(name, str):
-                            names = [name]
-                        elif isinstance(name, list):
-                            names = name
-                        else:
-                            names = []
-                        edge_norms = [_normalise_street_name(n) for n in names if n]
-                        edge_norms = [n for n in edge_norms if n]
-                        edge_norm_cache[eid] = edge_norms
-                    
-                    # Option 1: Normal routing cost, stay at current index
-                    step_cost = _edge_traversal_cost(
-                        edge_data,
-                        prev_node=prev_u,
-                        next_node=v,
-                        dist_u_to_target=dist_u_to_target,
-                        dist_v_to_target=dist_v_to_target,
-                    )
-                    new_dist_opt1 = dist + step_cost
-                    if visited.get((v, s_idx, u), float('inf')) > new_dist_opt1:
-                        visited[(v, s_idx, u)] = new_dist_opt1
-                        priority = new_dist_opt1 + _h(v)
-                        heappush(queue, (priority, new_dist_opt1, next(c), v, s_idx, u))
-                        parents[(v, s_idx, u)] = (u, s_idx, prev_u)
-                        
-                    # Option 2: Attempt to find a sequence discount match.
-                    # Exact match first; then a conservative *token-prefix*
-                    # check (one street's tokens form a prefix of the other's)
-                    # so "KINGS CROSS" still matches "KINGS CROSS ROAD" while
-                    # the old bug — "KING STREET" matching "KINGSWAY" as raw
-                    # substring — can no longer happen.
-                    if norm_streets and s_idx < len(norm_streets):
-                        found_j = None
-                        for en in edge_norms:
-                            if en in street_to_indices:
-                                for idx in street_to_indices[en]:
-                                    if idx >= s_idx:
-                                        if found_j is None or idx < found_j:
-                                            found_j = idx
-
-                            if found_j is None or found_j > s_idx:
-                                en_tokens = en.split()
-                                for j in range(s_idx, min(s_idx + 10, len(norm_streets))):
-                                    expected = norm_streets[j]
-                                    if expected == en:
-                                        if found_j is None or j < found_j:
-                                            found_j = j
-                                            break
-                                        continue
-                                    exp_tokens = expected.split()
-                                    if not en_tokens or not exp_tokens:
-                                        continue
-                                    # Token-prefix match in either direction
-                                    if (len(en_tokens) <= len(exp_tokens)
-                                            and exp_tokens[: len(en_tokens)] == en_tokens):
-                                        if found_j is None or j < found_j:
-                                            found_j = j
-                                            break
-                                    elif (len(exp_tokens) < len(en_tokens)
-                                            and en_tokens[: len(exp_tokens)] == exp_tokens):
-                                        if found_j is None or j < found_j:
-                                            found_j = j
-                                            break
-                                            
-                        if found_j is not None:
-                            penalty = float(edge_data.get('penalty', 0.0) or 0.0)
-                            base_length = max(0.0, length - penalty)
-                            structural_penalty = _edge_traversal_cost(
-                                edge_data,
-                                prev_node=prev_u,
-                                next_node=v,
-                                dist_u_to_target=dist_u_to_target,
-                                dist_v_to_target=dist_v_to_target,
-                            ) - length
-                            discounted_cost = (base_length * 0.1) + penalty + structural_penalty
-                            new_dist_opt2 = dist + discounted_cost
-                            
-                            if visited.get((v, found_j, u), float('inf')) > new_dist_opt2:
-                                visited[(v, found_j, u)] = new_dist_opt2
-                                priority = new_dist_opt2 + _h(v)
-                                heappush(queue, (priority, new_dist_opt2, next(c), v, found_j, u))
-                                parents[(v, found_j, u)] = (u, s_idx, prev_u)
-                                
-        if found_target:
-            # Reconstruct path from parents
-            leg_path = []
-            curr = found_target
-            while curr in parents:
-                leg_path.append(curr[0])
-                curr = parents[curr]
-            leg_path.append(current_source)
-            leg_path.reverse()
-            
-            full_route.extend(leg_path[1:])
-            current_source = found_target[0]
-            current_street_idx = found_target[1]
-        else:
-            if hit_state_cap:
-                truncated_legs += 1
-                print(f"  Leg {i} hit the {MAX_SEARCH_STATES}-state search cap: "
-                      f"{current_source} -> {len(target_set)} target node(s)")
+            bundle = G.get_edge_data(u, v)
+            edge_data = _best_edge_data(bundle)
+            if edge_data is None:
+                continue
+            if pure_length_cost:
+                base = float(edge_data.get("length", 1.0) or 1.0)
             else:
-                unreachable_legs += 1
-                print(f"  No path for leg {i}: {current_source} -> {target_set}")
+                base = _ordered_edge_cost(edge_data, prev_node=prev, next_node=v)
 
-    return full_route, {
-        "unreachable_legs": unreachable_legs,
-        "truncated_legs": truncated_legs,
+            names = edge_name_set(G, u, v)
+            advance = False
+            if idx < K:
+                c = C[idx]
+                if c.kind == "STREET":
+                    advance = c.key in names
+                else:
+                    summary = anchors[idx]
+                    advance = (summary is not None and summary[3] is not None
+                               and v in summary[3])
+            stay_on = stay_key is not None and stay_key in names
+
+            def push(next_idx, cost):
+                state = (v, next_idx, u)
+                new_g = g + cost
+                if best.get(state, float("inf")) > new_g:
+                    best[state] = new_g
+                    parents[state] = (u, idx, prev)
+                    heappush(queue, (new_g + h(v, next_idx), new_g, next(tie),
+                                     v, next_idx, u))
+
+            # The non-advancing branch is always pushed (at connector price
+            # unless the edge is the street we're already on): an edge that
+            # *could* advance the sequence may be a stray brush with a street
+            # the run needs later, and consuming the constraint there would
+            # be wrong — or fatal, if the early match is a dead end.
+            if advance:
+                push(idx + 1, base)
+            if stay_on:
+                push(idx, base)
+            else:
+                push(idx, base if pure_length_cost else base * connector_mult)
+
+    info = {
+        "reached_goal": goal_state is not None,
+        "max_idx": max_idx,
+        "dest_reached_idx": dest_reached_idx,
+        "constraints": K,
+        "states_explored": states,
+        "hit_state_cap": hit_cap,
+        "goal_cost": goal_cost,
     }
+    if goal_state is None:
+        return None, info
+
+    path = []
+    cur = goal_state
+    while cur in parents:
+        path.append(cur[0])
+        cur = parents[cur]
+    path.append(cur[0])
+    path.reverse()
+    return path, info
 
 
-def _clean_backtrack(route_nodes):
-    """Remove consecutive duplicates and A→B→A out-and-back artifacts."""
-    if not route_nodes:
-        return []
-    clean = [route_nodes[0]]
-    for i in range(1, len(route_nodes)):
-        curr = route_nodes[i]
-        if curr == clean[-1]:
-            continue
-        if len(clean) >= 2 and curr == clean[-2]:
-            clean.pop()
-        else:
-            clean.append(curr)
-    return clean
+def route_ordered_with_ladder(G, origin_node, dest_node, constraints,
+                              prohibited_turns=None, street_to_nodes=None,
+                              max_demotions=8, max_states=MAX_ORDERED_STATES,
+                              compute_optimum=False):
+    """Degradation ladder around :func:`get_ordered_route` — every gap explicit.
 
+    T0  all constraints enforced                        -> ``ordered_strict``
+    T1  demote the blocking constraint, retry (<= 4)    -> ``ordered_relaxed``
+    T2  keep only hard (exact/junction) constraints     -> ``ordered_partial``
+    T3  plain shortest path                             -> ``shortest_path``
 
-def _collapse_revisits(route_nodes):
-    """Drop revisit-loops by truncating to the first occurrence of any
-    repeated node.
-
-    Sequence-state Dijkstra (state = ``(node, sequence_idx, prev_node)``)
-    permits a node to be reached multiple times via different predecessor
-    chains. On junctions modelled as small circular street rings (e.g.
-    the BFI IMAX, which is tagged ``junction=circular``, not
-    ``junction=roundabout``, so the pipeline's ring-aggregation never
-    fires), the sequence discount makes a second orbit competitive with
-    the natural exit and the router happily laps.
-
-    The collapse is structurally safe: the second occurrence of node
-    ``X`` was reached from some predecessor and continued to some
-    successor; that successor edge now follows the *first* occurrence
-    of ``X`` in the collapsed list, and the edge ``X → successor``
-    exists in the graph by construction.
+    Returns ``(route_nodes, meta)``; ``meta.demoted`` lists every constraint
+    dropped on the way to a route, as ``(raw, source)`` pairs.
     """
-    if not route_nodes:
-        return []
-    out = [route_nodes[0]]
-    seen = {route_nodes[0]: 0}
-    for n in route_nodes[1:]:
-        if n in seen:
-            keep_until = seen[n]
-            del out[keep_until + 1:]
-            seen = {x: i for i, x in enumerate(out)}
+    active = list(constraints)
+    demoted = []
+    mode = "ordered_strict"
+    attempts = 0
+    last_info = {}
+
+    for _ in range(max_demotions + 1):
+        route, info = get_ordered_route(
+            G, origin_node, dest_node, active,
+            prohibited_turns=prohibited_turns,
+            street_to_nodes=street_to_nodes,
+            max_states=max_states,
+        )
+        attempts += 1
+        last_info = info
+        if route is not None:
+            meta = _ordered_meta(G, route, info, mode, demoted, attempts)
+            if compute_optimum:
+                meta["ordered_optimum_m"] = _ordered_optimum(
+                    G, origin_node, dest_node, active,
+                    prohibited_turns, street_to_nodes, max_states)
+            return route, meta
+        if not active:
+            break
+        # Pick the demotion victim. Demoting on cap-hit rather than treating
+        # it as exhaustion is deliberate — see ROADMAP risks.
+        #
+        # If the search *reached the destination* short of the goal, the
+        # unsatisfied suffix [dest_idx..K) is what blocked it — demote the
+        # first soft constraint in that suffix, else the suffix head. This is
+        # what stops a bad *final* constraint (a fuzzy destination street)
+        # from cascading demotions through a perfectly satisfiable middle.
+        #
+        # Otherwise fall back to max_idx and prefer a *soft* constraint at or
+        # before it: when a hard, correctly resolved street appears
+        # unreachable, the usual culprit is an earlier low-confidence guess
+        # (wrong ring, word-removal mismatch) that pinned the search to the
+        # wrong part of town.
+        dest_idx = info.get("dest_reached_idx")
+        if dest_idx is not None and dest_idx < len(active):
+            victim_idx = next(
+                (i for i in range(dest_idx, len(active)) if not active[i].hard),
+                dest_idx,
+            )
         else:
-            out.append(n)
-            seen[n] = len(out) - 1
-    return out
+            blocked = min(info["max_idx"], len(active) - 1)
+            victim_idx = next(
+                (i for i in range(blocked, -1, -1) if not active[i].hard),
+                blocked,
+            )
+        victim = active.pop(victim_idx)
+        demoted.append((victim.raw, victim.source))
+        mode = "ordered_relaxed"
+
+    hard_only = [c for c in constraints if c.hard]
+    if len(hard_only) < len(constraints):
+        for c in constraints:
+            if not c.hard and (c.raw, c.source) not in demoted:
+                demoted.append((c.raw, c.source))
+        route, info = get_ordered_route(
+            G, origin_node, dest_node, hard_only,
+            prohibited_turns=prohibited_turns,
+            street_to_nodes=street_to_nodes,
+            max_states=max_states,
+        )
+        attempts += 1
+        last_info = info
+        if route is not None:
+            meta = _ordered_meta(G, route, info, "ordered_partial", demoted, attempts)
+            if compute_optimum:
+                meta["ordered_optimum_m"] = _ordered_optimum(
+                    G, origin_node, dest_node, hard_only,
+                    prohibited_turns, street_to_nodes, max_states)
+            return route, meta
+
+    # T3 — the honest fallback. Still filtered for prohibited turns via the
+    # ordered search with zero constraints (plain A* with the same expansion),
+    # so even the fallback cannot emit an illegal triple. Uncorridored: when
+    # the run's prescribed crossing is physically closed, the only legal route
+    # lies well outside the origin–destination bbox.
+    route, info = get_ordered_route(
+        G, origin_node, dest_node, [],
+        prohibited_turns=prohibited_turns,
+        street_to_nodes=street_to_nodes,
+        max_states=max_states,
+        corridor_margin_deg=None,
+    )
+    attempts += 1
+    if route is not None:
+        for c in constraints:
+            if (c.raw, c.source) not in demoted:
+                demoted.append((c.raw, c.source))
+        meta = _ordered_meta(G, route, info, "shortest_path", demoted, attempts)
+        meta["status"] = "failed"
+        return route, meta
+
+    meta = _ordered_meta(G, None, last_info, "unroutable", demoted, attempts)
+    meta["status"] = "failed"
+    return None, meta
+
+
+def _ordered_optimum(G, origin_node, dest_node, active_constraints,
+                     prohibited_turns, street_to_nodes, max_states):
+    """Length of the shortest route satisfying the same constraint sequence,
+    with the connector multiplier and structural penalties zeroed. The route
+    length divided by this is the honest wastefulness metric — Blue Book
+    geometry is by definition not the straight line, so comparing against the
+    straight line punishes correct runs."""
+    _, info = get_ordered_route(
+        G, origin_node, dest_node, active_constraints,
+        prohibited_turns=prohibited_turns,
+        street_to_nodes=street_to_nodes,
+        max_states=max_states,
+        pure_length_cost=True,
+    )
+    cost = info.get("goal_cost")
+    return round(cost, 1) if cost is not None else None
+
+
+def _ordered_meta(G, route, info, mode, demoted, attempts):
+    meta = {
+        "routing_mode": mode,
+        "demoted_constraints": list(demoted),
+        "ladder_attempts": attempts,
+        "max_idx": info.get("max_idx"),
+        "constraints_total": info.get("constraints"),
+        "states_explored": info.get("states_explored"),
+        "hit_state_cap": bool(info.get("hit_state_cap")),
+        "unreachable_legs": 0,
+        "truncated_legs": 0,
+    }
+    if route:
+        meta.update(_extract_route_metadata(G, route))
+    else:
+        meta.update({"total_distance": 0.0, "streets_traversed": []})
+    return meta
+
+
+def constraint_waypoints(G, route_nodes, constraints):
+    """Derive display waypoints from the routed path: the node at which each
+    constraint is first satisfied, in order. Strictly more accurate than the
+    old intersection guesses, and free."""
+    waypoints = []
+    idx = 0
+    C = list(constraints)
+    for i in range(1, len(route_nodes)):
+        if idx >= len(C):
+            break
+        u, v = route_nodes[i - 1], route_nodes[i]
+        c = C[idx]
+        if c.kind == "STREET":
+            if c.key in edge_name_set(G, u, v):
+                waypoints.append(v)
+                idx += 1
+        else:
+            if v in c.key:
+                waypoints.append(v)
+                idx += 1
+    return waypoints
 
 
 def _extract_route_metadata(G, route_nodes):

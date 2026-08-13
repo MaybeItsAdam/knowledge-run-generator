@@ -8,7 +8,8 @@ For each run:
 Each leg is a Dijkstra search constrained to edges whose name matches the
 current street, so the route is forced to traverse every named street in order.
 
-Outputs: overwrites constants/runPoints.json with the rebuilt 5-run dataset.
+Outputs: writes constants/runPoints_strict_demo.json (never the canonical
+runPoints.json).
 """
 
 from __future__ import annotations
@@ -38,9 +39,13 @@ from knowledge_run_generator.router import (
 )
 import osmnx as ox
 
-CACHE_DIR = Path("/tmp/app_cache")
+from knowledge_run_generator.cache import cache_dir as _krg_cache_dir
+
+CACHE_DIR = _krg_cache_dir()
 TXT_FILE = ROOT / "The Blue Book Runs of the Knowledge of London.txt"
-OUTPUT_FILE = ROOT / "constants" / "runPoints.json"
+# Deliberately NOT constants/runPoints.json: this demo must never clobber the
+# canonical pipeline output.
+OUTPUT_FILE = ROOT / "constants" / "runPoints_strict_demo.json"
 DEMO_DIR = ROOT / "knowledge_run_generator" / "blue_book_demo"
 
 # direction-verb tokens that appear before a street name in the txt file
