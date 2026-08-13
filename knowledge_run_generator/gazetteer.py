@@ -116,6 +116,88 @@ class GazetteerEntry:
     on_street: str | None = None
     approach_node: int | None = None
     source: str = "override"
+    # The winning record's postal district disagreed with the one in the
+    # query. Not fatal on its own — Points List districts have gaps — but
+    # preflight surfaces it, because it is how wrong-borough endpoints happen.
+    district_mismatch: bool = False
+
+
+class DistrictModel:
+    """Robust per-district geometry, built from the geocoded Points List.
+
+    For each postal district with at least ``min_points`` members: the
+    *median* centre (the mean is dragged by outliers — W1 has 551 points with
+    a p90 spread of 2.3 km) and the 95th-percentile radius around that
+    centre, floored at ``radius_floor_m`` so tiny dense districts don't fail
+    everything a street away. Districts with fewer members are unmodelled —
+    a 1-point district (SW2) can't say anything about plausibility.
+    """
+
+    def __init__(self, knowledge_pois: dict | None, min_points: int = 5,
+                 radius_floor_m: float = 1000.0):
+        self._centres: dict[str, tuple[float, float]] = {}
+        self._radii: dict[str, float] = {}
+
+        by_district: dict[str, list[tuple[float, float]]] = {}
+        for value in (knowledge_pois or {}).values():
+            parsed = _parse_override(value)
+            if parsed is None:
+                continue
+            district = str(parsed.get("postal_district", "")).upper()
+            if not district:
+                continue
+            by_district.setdefault(district, []).append(
+                (parsed["lat"], parsed["lon"]))
+
+        for district, points in by_district.items():
+            lats = sorted(p[0] for p in points)
+            lons = sorted(p[1] for p in points)
+            centre = (lats[len(lats) // 2], lons[len(lons) // 2])
+            # A centre helps even at n=1 (street-tier disambiguation just
+            # needs *an* anchor in the right part of town); a plausibility
+            # radius is only trustworthy with enough points behind it, so
+            # districts under ``min_points`` are never *checked*.
+            self._centres[district] = centre
+            if len(points) < min_points:
+                continue
+            dists = sorted(
+                _haversine(centre[0], centre[1], la, lo) for la, lo in points
+            )
+            p95 = dists[min(len(dists) - 1, int(0.95 * len(dists)))]
+            self._radii[district] = max(p95, radius_floor_m)
+
+    def centre(self, district: str | None) -> tuple[float, float] | None:
+        if not district:
+            return None
+        return self._centres.get(district.upper())
+
+    def check(self, district: str | None, lat: float, lon: float,
+              fail_floor_m: float = 2500.0) -> dict | None:
+        """Plausibility of a point claiming to be in *district*.
+
+        Returns ``None`` when the district is unknown/unmodelled, else
+        ``{"distance_m", "p95_radius_m", "status"}`` with status ``ok`` (inside
+        p95), ``warn`` (beyond p95) or ``fail`` (beyond
+        ``max(p95 × 1.5, fail_floor_m)`` — the Run 131/177/206 class).
+        """
+        if not district:
+            return None
+        centre = self._centres.get(district.upper())
+        radius = self._radii.get(district.upper())
+        if centre is None or radius is None:
+            return None
+        distance = _haversine(centre[0], centre[1], lat, lon)
+        if distance > max(radius * 1.5, fail_floor_m):
+            status = "fail"
+        elif distance > radius:
+            status = "warn"
+        else:
+            status = "ok"
+        return {
+            "distance_m": round(distance, 1),
+            "p95_radius_m": round(radius, 1),
+            "status": status,
+        }
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -327,7 +409,13 @@ class _PoiTable:
 
     @staticmethod
     def _best(candidates: list[dict], postcode: str | None, wants_station: bool) -> dict:
-        """Pick among same-named places: kind first, then postal district."""
+        """Pick among same-named places: kind first, then postal district.
+
+        A winner whose recorded district disagrees with the query's postcode
+        is returned *flagged* (``_district_mismatch``) rather than silently
+        accepted — the single-candidate wrong-district hit is exactly how
+        "SHORTLANDS W6" resolved to a point 18.5 km away in Bromley.
+        """
         pool = candidates
         if wants_station:
             stations = [c for c in pool if c.get("kind") in _STATION_KINDS]
@@ -339,10 +427,16 @@ class _PoiTable:
             if non_stations:
                 pool = non_stations
 
-        if len(pool) > 1 and postcode:
+        if postcode:
             for candidate in pool:
                 if str(candidate.get("postal_district", "")).upper() == postcode:
                     return candidate
+            chosen = pool[0]
+            recorded = str(chosen.get("postal_district", "")).upper()
+            if recorded and recorded != postcode:
+                flagged = dict(chosen)
+                flagged["_district_mismatch"] = True
+                return flagged
         return pool[0]
 
 
@@ -402,8 +496,21 @@ class Gazetteer:
 
         self.alias_index = alias_index
         self._resolve_cache: dict[tuple[int, str], GazetteerEntry | None] = {}
-        self._district_centroids: dict[str, tuple[float, float]] | None = None
+        self._district_model: DistrictModel | None = None
         self._knowledge_pois_raw: dict[str, Any] = knowledge_pois or {}
+
+    @property
+    def district_model(self) -> DistrictModel:
+        """Lazily built per-district geometry (median centre, p95 radius).
+
+        Public because preflight consumes it for endpoint plausibility —
+        the old private mean-based centroid was consulted only by the street
+        tier, so tiers 1–3 could resolve an endpoint 18 km from its stated
+        district without anything noticing.
+        """
+        if self._district_model is None:
+            self._district_model = DistrictModel(self._knowledge_pois_raw)
+        return self._district_model
 
     # ------------------------------------------------------------------
     # Public API
@@ -475,6 +582,22 @@ class Gazetteer:
             alias_index=self.alias_index,
         )
 
+        # A point-tier record in the *wrong postal district* whose name is a
+        # street in the graph: the stated district is the Blue Book's, the
+        # record's is somewhere else in London (or beyond), and the street
+        # tier — which uses the district to pick the right same-named street —
+        # is strictly more trustworthy. This is how "SHORTLANDS W6" stops
+        # resolving into Bromley.
+        if record.get("_district_mismatch") and not on_street and self.alias_index is not None:
+            stem, _postcode = _split_postcode(self._follow_aliases(address))
+            norm = _normalise_name(stem)
+            if (norm in self.alias_index.canonical_to_nodes
+                    or norm in self.alias_index.alias_to_canonical):
+                street_entry = self._resolve_street(address, G)
+                if street_entry is not None:
+                    self._resolve_cache[cache_key] = street_entry
+                    return street_entry
+
         # Street-name endpoints hijacked by a point tier: "YORK WAY N1" hits
         # the Points List's rooftop geocode before the street tier ever runs,
         # and the rooftop snaps 50m+ from the kerb. When the snap is that bad
@@ -506,6 +629,7 @@ class Gazetteer:
             on_street=on_street,
             approach_node=approach_node,
             source=record.get("_source", "override"),
+            district_mismatch=bool(record.get("_district_mismatch")),
         )
         self._resolve_cache[cache_key] = entry
         return entry
@@ -515,32 +639,14 @@ class Gazetteer:
     # ------------------------------------------------------------------
 
     def _district_centroid(self, postcode: str | None) -> tuple[float, float] | None:
-        """Mean position of the Points List entries in a postal district.
+        """Robust centre of a postal district (see :class:`DistrictModel`).
 
         Used to pick between same-named streets: "HIGH STREET N1" and "HIGH
         STREET SE1" share a canonical name and therefore a single node set in
         the alias index, and the district is the only signal in the endpoint
         that separates them.
         """
-        if not postcode:
-            return None
-        if self._district_centroids is None:
-            sums: dict[str, list[float]] = {}
-            for value in self._knowledge_pois_raw.values():
-                parsed = _parse_override(value)
-                if parsed is None:
-                    continue
-                district = str(parsed.get("postal_district", "")).upper()
-                if not district:
-                    continue
-                acc = sums.setdefault(district, [0.0, 0.0, 0.0])
-                acc[0] += parsed["lat"]
-                acc[1] += parsed["lon"]
-                acc[2] += 1
-            self._district_centroids = {
-                d: (a[0] / a[2], a[1] / a[2]) for d, a in sums.items() if a[2]
-            }
-        return self._district_centroids.get(postcode.upper())
+        return self.district_model.centre(postcode)
 
     def _resolve_street(self, address: str, G) -> GazetteerEntry | None:
         """Resolve an endpoint that names a street rather than a point.
@@ -734,6 +840,8 @@ class PreflightReport:
     start_snap_m: float | None = None
     end_snap_m: float | None = None
     unresolved_streets: list = None
+    start_district_m: float | None = None
+    end_district_m: float | None = None
 
     def __post_init__(self):
         if self.reasons is None:
@@ -744,6 +852,41 @@ class PreflightReport:
             self.unresolved_streets = []
 
 
+def _check_endpoint_district(report, label, entry, name, district_model):
+    """Plausibility of one endpoint against its stated postal district."""
+    if entry is None or district_model is None or not name:
+        return
+    if entry.source == "override":
+        # Curator-pinned coordinates are the explicit-override escape hatch:
+        # they also cover the handful of Blue Book postcode typos
+        # ("SPITALFIELDS MARKET E10") where the *stated* district is the
+        # wrong party in the disagreement.
+        return
+    district = _split_postcode(name)[1]
+    if not district:
+        return
+    verdict = district_model.check(district, entry.lat, entry.lon)
+    if verdict is None:
+        return
+    setattr(report, f"{label}_district_m", verdict["distance_m"])
+    if verdict["status"] == "fail":
+        report.ok = False
+        report.reasons.append(
+            f"{label} resolved {verdict['distance_m']:.0f}m from the centre of "
+            f"{district} (p95 radius {verdict['p95_radius_m']:.0f}m) — wrong place"
+        )
+        return
+    if verdict["status"] == "warn":
+        report.warnings.append(
+            f"{label} is {verdict['distance_m']:.0f}m from the centre of "
+            f"{district} (p95 {verdict['p95_radius_m']:.0f}m)"
+        )
+    if entry.district_mismatch:
+        report.warnings.append(
+            f"{label} record's postal district disagrees with {district}"
+        )
+
+
 def preflight_run(
     start_entry: GazetteerEntry | None,
     end_entry: GazetteerEntry | None,
@@ -752,6 +895,9 @@ def preflight_run(
     max_snap_m: float = 50.0,
     warn_snap_m: float = 20.0,
     known_junctions: set | None = None,
+    district_model: DistrictModel | None = None,
+    start_name: str | None = None,
+    end_name: str | None = None,
 ) -> PreflightReport:
     """
     Sanity-check a run *before* we spend time routing it.
@@ -759,11 +905,17 @@ def preflight_run(
     Fails the run (``ok = False``) when:
       * the start or end didn't resolve through the gazetteer, or
       * the snap distance is ``> max_snap_m`` (the POI probably points at the
-        wrong side of a motorway or onto a pedestrian-only platform).
+        wrong side of a motorway or onto a pedestrian-only platform), or
+      * an endpoint resolved implausibly far from its stated postal district
+        (``district_model`` given): beyond ``max(p95 × 1.5, 2500 m)`` of the
+        district's robust centre. This is what catches "SHORTLANDS W6"
+        resolving into Bromley — snap distance alone cannot.
 
     Warns (``ok = True`` with entries in ``warnings``) when:
       * the snap distance is ``> warn_snap_m``, or
-      * an intermediate street can't be resolved by the alias index.
+      * an intermediate street can't be resolved by the alias index, or
+      * an endpoint is beyond the district's p95 radius (but under the fail
+        threshold), or its record's district disagrees with the stated one.
 
     The distinction matters for triage: failures should be fixed in
     ``poi_overrides.json``; warnings are usually OK but flag runs to audit.
@@ -799,6 +951,9 @@ def preflight_run(
             report.warnings.append(
                 f"end snap distance {end_entry.snap_distance_m:.0f}m"
             )
+
+    _check_endpoint_district(report, "start", start_entry, start_name, district_model)
+    _check_endpoint_district(report, "end", end_entry, end_name, district_model)
 
     if alias_index is not None and intermediate_streets:
         # Junction names resolved by the curated junction index count as
