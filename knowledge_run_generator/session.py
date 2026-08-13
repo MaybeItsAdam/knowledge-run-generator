@@ -25,14 +25,15 @@ from typing import Any
 from .aliases import AliasIndex, load_or_build_alias_index
 from .cache import cache_dir as krg_cache_dir
 from .caller import generate_call
+from .constraints import Constraint
 from .gazetteer import Gazetteer, load_knowledge_pois, preflight_run
 from .geocoder import geocode_and_snap
 from .router import (
     _extract_route_metadata,
-    get_constrained_route,
     get_route,
     load_graph,
     nodes_to_coords_geometry,
+    route_ordered_with_ladder,
 )
 
 
@@ -227,10 +228,23 @@ class Session:
         )
 
         if via:
-            route_nodes, _meta = get_constrained_route(
-                G, start_node, end_node, [],
+            # Ad-hoc via streets are *requests*, not Blue Book scripture:
+            # every constraint is soft, so a name that resolves nowhere (or
+            # can't legally be reached in sequence) is demoted by the ladder
+            # instead of failing the whole query.
+            constraints = []
+            street_index = self.alias_index.canonical_to_nodes
+            for name in via:
+                canonical = self.alias_index.resolve(str(name))
+                if canonical is None:
+                    continue
+                constraints.append(
+                    Constraint("STREET", canonical, str(name), "exact", False)
+                )
+            route_nodes, _meta = route_ordered_with_ladder(
+                G, start_node, end_node, constraints,
                 prohibited_turns=prohibited_turns,
-                intermediate_streets=list(via),
+                street_to_nodes=street_index,
             )
         else:
             route_nodes = get_route(
