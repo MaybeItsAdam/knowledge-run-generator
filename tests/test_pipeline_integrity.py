@@ -19,8 +19,6 @@ from knowledge_run_generator.blue_book_demo.run_pipeline import (
     parse_intermediary_file,
     process_runs,
 )
-from knowledge_run_generator.corrector import correct_and_validate
-from knowledge_run_generator.validator import ValidationResult
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_RUNS = 320
@@ -72,24 +70,32 @@ class SaveOrderingTests(unittest.TestCase):
 
 
 class ExemptedTurnsTests(unittest.TestCase):
-    def test_exempted_turns_reach_the_validator(self):
-        seen = {}
+    """The pipeline routes against ``prohibited_turns - exempted_turns``, so an
+    exemption must make the difference between a detour and the direct route
+    inside the ordered search itself (the corrector plumbing this used to
+    test was deleted with the legacy router)."""
 
-        def route_fn(G, o, d, wps):
-            return [1, 2, 3], {"total_distance": 100.0}
+    def test_exempted_triple_is_traversable_by_the_router(self):
+        import networkx as nx
+        from knowledge_run_generator.router import get_ordered_route
 
-        def validate_fn(G, nodes, o, d, turns, streets, cfg, wps, exempted_turns=None):
-            seen["exempted_turns"] = exempted_turns
-            return ValidationResult(passed=True)
+        G = nx.MultiDiGraph()
+        for nid, (x, y) in {1: (0.0, 0.0), 2: (0.001, 0.0), 3: (0.002, 0.0),
+                            4: (0.0015, 0.001)}.items():
+            G.add_node(nid, x=x, y=y)
+        G.add_edge(1, 2, length=100.0, highway="primary")
+        G.add_edge(2, 3, length=100.0, highway="primary")
+        G.add_edge(2, 4, length=100.0, highway="primary")
+        G.add_edge(4, 3, length=100.0, highway="primary")
+
+        prohibited = {(1, 2, 3)}
+        route, _ = get_ordered_route(G, 1, 3, [], prohibited_turns=prohibited)
+        self.assertEqual(route, [1, 2, 4, 3], "restriction must force the detour")
 
         exempted = {(1, 2, 3)}
-        correct_and_validate(
-            None, 1, 3, [], [], set(), {},
-            route_fn=route_fn,
-            validate_fn=validate_fn,
-            exempted_turns=exempted,
-        )
-        self.assertEqual(seen.get("exempted_turns"), exempted)
+        route, _ = get_ordered_route(G, 1, 3, [],
+                                     prohibited_turns=prohibited - exempted)
+        self.assertEqual(route, [1, 2, 3], "exemption must restore the turn")
 
 
 def _run_object(**overrides):

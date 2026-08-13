@@ -295,7 +295,7 @@ def check_waypoint_detours(G, route_nodes, waypoint_nodes, origin_node, dest_nod
 
 
 def check_directness(G, route_nodes, origin_node, dest_node,
-                     max_deviation_ratio=1.8, max_lateral_offset_m=800):
+                     max_deviation_ratio=None, max_lateral_offset_m=None):
     """
     Two-part directness check:
 
@@ -303,10 +303,14 @@ def check_directness(G, route_nodes, origin_node, dest_node,
     2. Max lateral offset — max perpendicular distance from any route point
        to the origin→destination line.
 
-    Thresholds are adaptive by straight-line distance:
+    Default thresholds are adaptive by straight-line distance:
       - <1 km   → ratio 2.5, offset 500 m
       - 1–3 km  → ratio 1.8, offset 800 m
       - >3 km   → ratio 1.8, offset 960 m
+
+    An *explicit* ``max_deviation_ratio`` / ``max_lateral_offset_m`` wins at
+    every distance. The <1 km band used to hard-code its thresholds, which
+    made a ``run_specific_fixes.json`` patch on a short run a silent no-op.
 
     Returns (is_direct, metrics_dict).
     """
@@ -339,16 +343,17 @@ def check_directness(G, route_nodes, origin_node, dest_node,
             max_offset = offset_m
             worst_idx = i
 
-    # Adaptive thresholds
+    # Adaptive defaults; explicit overrides win at every distance.
     if straight_dist < 1000:
-        eff_ratio = 2.5
-        eff_offset = 500
+        eff_ratio = max_deviation_ratio if max_deviation_ratio is not None else 2.5
+        eff_offset = max_lateral_offset_m if max_lateral_offset_m is not None else 500
     elif straight_dist < 3000:
-        eff_ratio = max_deviation_ratio
-        eff_offset = max_lateral_offset_m
+        eff_ratio = max_deviation_ratio if max_deviation_ratio is not None else 1.8
+        eff_offset = max_lateral_offset_m if max_lateral_offset_m is not None else 800
     else:
-        eff_ratio = max_deviation_ratio
-        eff_offset = max_lateral_offset_m * 1.2
+        eff_ratio = max_deviation_ratio if max_deviation_ratio is not None else 1.8
+        eff_offset = (max_lateral_offset_m if max_lateral_offset_m is not None
+                      else 800 * 1.2)
 
     is_direct = ratio <= eff_ratio and max_offset <= eff_offset
 
@@ -512,6 +517,78 @@ def check_street_order(G, route_nodes, expected_streets, min_coverage=1.0):
     }
 
 
+def check_constraint_order(G, route_nodes, constraints, min_coverage=1.0):
+    """Ordered-traversal metrics over *compiled constraints* rather than raw
+    street names.
+
+    :func:`check_street_order` treats every Blue Book line as a street name,
+    so a junction line ("HIGHBURY CORNER") or a gyratory can never match an
+    edge and permanently depresses the score even when the route drives the
+    run perfectly. Constraints carry the distinction: a ``STREET`` position
+    matches an edge whose name set contains its key, a ``NODE`` position
+    matches arriving at any member node. Lines that resolved to nothing are
+    explicit gaps upstream — they produce no constraint and are not punished
+    here (the ``hard_gaps`` gate covers what was *demoted*).
+
+    Returns ``(is_ordered, metrics)`` with the same metric names as
+    :func:`check_street_order`.
+    """
+    C = list(constraints or [])
+    if not C:
+        return True, {
+            "ordered_coverage": 1.0,
+            "strict_ordered": 1.0,
+            "matched": 0,
+            "expected": 0,
+            "missing": [],
+            "first_gap": None,
+        }
+
+    edge_names = _route_edge_names(G, route_nodes)
+
+    def matches(constraint, j):
+        if constraint.kind == "STREET":
+            return constraint.key in edge_names[j]
+        return route_nodes[j + 1] in constraint.key
+
+    m = len(edge_names)
+
+    # LCS over (constraints × edges), membership-matched.
+    prev = [0] * (m + 1)
+    for c in C:
+        cur = [0] * (m + 1)
+        for j in range(1, m + 1):
+            if matches(c, j - 1):
+                cur[j] = prev[j - 1] + 1
+            else:
+                cur[j] = max(prev[j], cur[j - 1])
+        prev = cur
+    matched = prev[m]
+
+    # Greedy walk for the strict metric and the stall point.
+    idx = 0
+    for j in range(m):
+        while idx < len(C) and matches(C[idx], j):
+            idx += 1
+        if idx >= len(C):
+            break
+
+    missing = []
+    for c in C:
+        if not any(matches(c, j) for j in range(m)):
+            missing.append(c.raw)
+
+    coverage = matched / len(C)
+    return coverage >= min_coverage, {
+        "ordered_coverage": round(coverage, 3),
+        "strict_ordered": round(idx / len(C), 3),
+        "matched": matched,
+        "expected": len(C),
+        "missing": missing,
+        "first_gap": C[idx].raw if idx < len(C) else None,
+    }
+
+
 def _extract_route_streets(G, route_nodes):
     """Return ordered list of unique street names along the route."""
     streets = []
@@ -656,7 +733,8 @@ def check_run_shape(
 
 def validate_route(G, route_nodes, origin_node, dest_node,
                    prohibited_turns=None, expected_streets=None,
-                   config=None, waypoint_nodes=None, exempted_turns=None):
+                   config=None, waypoint_nodes=None, exempted_turns=None,
+                   constraints=None):
     """
     Run all three checks on a route.
 
@@ -666,6 +744,9 @@ def validate_route(G, route_nodes, origin_node, dest_node,
       - min_street_coverage
       - min_ordered_coverage
       - skip_directness_check  (bool)
+      - hard_gaps  (int) — number of hard constraints the router had to
+        demote to produce this route. Anything > 0 fails the run: the route
+        exists but is not the Blue Book run.
 
     Returns a :class:`ValidationResult`.
     """
@@ -684,16 +765,25 @@ def validate_route(G, route_nodes, origin_node, dest_node,
     else:
         result.is_direct, result.directness_metrics = check_directness(
             G, route_nodes, origin_node, dest_node,
-            max_deviation_ratio=config.get("max_deviation_ratio", 1.8),
-            max_lateral_offset_m=config.get("max_lateral_offset_m", 800),
+            max_deviation_ratio=config.get("max_deviation_ratio"),
+            max_lateral_offset_m=config.get("max_lateral_offset_m"),
         )
 
-    # C — Street coverage (unordered) and ordered traversal
+    # C — Street coverage (unordered) and ordered traversal. When compiled
+    # constraints are available they are the authority on ordering: they can
+    # express junctions and gyratories as NODE positions, which a street-name
+    # walk structurally cannot match.
     if expected_streets:
         result.is_covered, result.coverage_metrics = check_street_coverage(
             G, route_nodes, expected_streets,
             min_coverage=config.get("min_street_coverage", 0.6),
         )
+    if constraints is not None:
+        result.is_ordered, result.order_metrics = check_constraint_order(
+            G, route_nodes, constraints,
+            min_coverage=config.get("min_ordered_coverage", 1.0),
+        )
+    elif expected_streets:
         result.is_ordered, result.order_metrics = check_street_order(
             G, route_nodes, expected_streets,
             min_coverage=config.get("min_ordered_coverage", 1.0),
@@ -706,11 +796,12 @@ def validate_route(G, route_nodes, origin_node, dest_node,
         result.has_sane_detours = True
         result.detour_violations = []
 
-    # `is_ordered` — whether the route actually walks the Blue Book sequence —
-    # is deliberately NOT in this gate yet. The current router only *prefers*
-    # the expected streets (a cost discount, not a constraint), so gating on it
-    # today would fail most of the corpus without telling anyone anything new.
-    # It is measured and recorded so the router work has a baseline to move,
-    # and becomes the gate once the ordered search lands.
-    result.passed = result.is_legal and result.is_direct and result.has_sane_detours
+    # The gate is the Knowledge standard: the route must be legal, must walk
+    # the Blue Book streets in order, and must not have bought its ordering by
+    # demoting hard constraints. Directness is *recorded* for triage but not
+    # gated — a Knowledge run is by definition not the straight line, and the
+    # honest wastefulness metric is `excess_over_ordered_optimum`, computed
+    # against the ordered optimum rather than the crow-flies line.
+    hard_gaps = int(config.get("hard_gaps") or 0)
+    result.passed = result.is_legal and result.is_ordered and hard_gaps == 0
     return result

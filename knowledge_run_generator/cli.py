@@ -253,6 +253,23 @@ def qa(report, top):
     click.echo(f"  directness failures: {len(directness_fails)}")
     click.echo(f"  legality failures:   {len(legality_fails)}")
 
+    # Ordered-router ladder telemetry (schema >= 4).
+    modes = Counter(v.get("routing_mode") for v in data.values()
+                    if v.get("routing_mode"))
+    if modes:
+        click.echo("  routing modes:       "
+                   + "  ".join(f"{m}={n}" for m, n in modes.most_common()))
+        hard_gap_runs = [k for k, v in data.items() if v.get("hard_gaps")]
+        caps = sum(1 for v in data.values() if v.get("hit_state_cap"))
+        laps = sum(1 for v in data.values() if v.get("ring_laps"))
+        click.echo(f"  runs with hard gaps: {len(hard_gap_runs)}"
+                   f"   hit state cap: {caps}   ring laps: {laps}")
+        excess = [v.get("excess_over_ordered_optimum") for v in data.values()
+                  if v.get("excess_over_ordered_optimum")]
+        if excess:
+            click.echo(f"  mean excess over ordered optimum: "
+                       f"{sum(excess) / len(excess):.3f}")
+
     # Blue Book fidelity. `passed` above says the route is legal and direct; it
     # says nothing about whether it is the *run*, so report that separately.
     ordered = [v.get("ordered_coverage") for v in data.values()
