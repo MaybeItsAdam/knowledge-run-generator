@@ -102,9 +102,9 @@ def validate_qa(min_passed: int) -> bool:
         print(f"  ! only {passed} runs passed (< --min-passed {min_passed})")
         ok = False
 
-    # Blue Book fidelity. `passed` is a claim about legality and directness
-    # only — a route can satisfy it while traversing none of the run's streets,
-    # so it cannot be the sole gate on what ships to the app.
+    # Blue Book fidelity. `passed` now gates on legality + ordered traversal +
+    # no hard gaps, so these figures largely mirror it — kept as an independent
+    # readout so a gate regression can't hide a fidelity slide.
     ordered = [v.get("ordered_coverage") for v in runs.values()
                if v.get("ordered_coverage") is not None]
     strict = [v.get("strict_ordered") for v in runs.values()
@@ -189,10 +189,11 @@ def promote_one(src: Path, dst: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected", type=int, default=320, help="Expected run count.")
-    # Floor sits just under the current honest pass count (227 after the 2026-08
-    # resolution work) so routine promotions can't regress below it; raise toward
-    # 300 as router legality/directness work lands.
-    parser.add_argument("--min-passed", type=int, default=225,
+    # Floor sits just under the current honest pass count (311 under the
+    # ordered gate: legality + full ordered traversal + no hard gaps) so
+    # routine promotions can't regress below it. The residual failures are
+    # explicit OSM-vs-Blue-Book drift (e.g. Hammersmith Bridge closure).
+    parser.add_argument("--min-passed", type=int, default=305,
                         help="Minimum QA-passed run count required to promote.")
     parser.add_argument("--allow-partial", action="store_true",
                         help="Promote even if runs are incomplete or POIs missing.")

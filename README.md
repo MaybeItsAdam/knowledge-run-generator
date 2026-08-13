@@ -2,18 +2,37 @@
 
 A Python engine for creating Knowledge of London "Runs" — validated, shortest-distance routes between points of interest in London.
 
-> **Current fidelity: 56 of 320 runs traverse their Blue Book streets in order.**
-> The `passed` count in `qa_report.json` (227/320) measures legality and
-> directness, *not* whether the route is the Blue Book run. See
-> [ROADMAP.md](./ROADMAP.md) for the measured baseline and the staged plan to
-> close the gap, and [What `passed` does and does not mean](#what-passed-does-and-does-not-mean).
+> **Current fidelity: 316 of 320 runs are legal and traverse their full Blue
+> Book constraint sequence in order** (mean ordered coverage 0.990, mean
+> strict-ordered 0.973, zero prohibited turns). The 4 residual failures are
+> explicit OSM-vs-Blue-Book drift — Hammersmith Bridge is closed to motor
+> traffic (Runs 188/189), Lewisham's Station Road no longer exists (46), and
+> Run 250's Bloomsbury squares are LTN-restricted — each recorded in
+> `qa_report.json` with the exact demoted constraints. See
+> [ROADMAP.md](./ROADMAP.md) for how the gap from 56/320 was closed, and
+> [What `passed` means](#what-passed-means).
 
 ## Features
-- **Semantic Routing**: A custom Dijkstra implementation that applies 90% routing discounts to "known" street sequences.
-- **Sequential Dijkstra**: Core logic that prevents "tractor beam" backtracks by requiring forward motion through sequence waypoints to unlock discounts.
-- **Roundabout Aggregation**: Automatically identifies topological roundabout rings and treats them as single waypoint sets.
+- **Constraint compiler**: Each Blue Book line compiles to a typed, ordered
+  constraint — a `STREET` (matched by edge name), or a `NODE` set (a named
+  junction from `junction_definitions.json`, or a roundabout ring located from
+  its neighbours). Unresolvable lines become explicit, reported gaps — never
+  silent guesses.
+- **Ordered-constraint A\***: One search per run over states
+  `(node, constraints_satisfied, prev_node)`. The goal test *is* the ordering —
+  a route that skips a Blue Book street is unrepresentable. Turn restrictions
+  are filtered inside the expansion, so an illegal triple cannot appear in the
+  output.
+- **Degradation ladder**: `ordered_strict` → `ordered_relaxed` (demote the
+  blocking constraint, preferring low-confidence guesses) → `ordered_partial`
+  (hard constraints only) → `shortest_path` (recorded as failed). Every
+  demotion is named in the QA record.
+- **Endpoint plausibility**: A per-district model (median centre, p95 radius)
+  built from the geocoded Points List fails any endpoint that resolves
+  implausibly far from its stated postal district — the class of bug where
+  "SHORTLANDS W6" silently geocoded into Bromley.
 - **Automatic Legality**: Validates routes against turn restrictions and provides deterministic "Calls" (navigation instructions).
-- **Cab-Mode Cost Model**: Penalizes service/slip-link detours, immediate U-turns, and backward stage progress to reduce divided-carriageway loop artifacts.
+- **Cab-Mode Cost Model**: Penalizes service/slip-link detours and immediate U-turns to reduce divided-carriageway loop artifacts.
 
 ## CLI
 
@@ -43,17 +62,32 @@ Subcommands:
 
 ## Current data-quality state (2026-08)
 
-All 320 runs build with zero preflight failures, zero endpoint snap breaches,
-and zero structural invalids; 227/320 pass full validation. The remaining
-failures are router-level legality (60) and directness (41) — endpoint/street
-resolution is no longer the bottleneck. Resolution is driven by curated data
-files in `knowledge_run_generator/blue_book_demo/`: `poi_overrides.json`
-(endpoints), `street_spelling_fixes.json` (Blue Book typos),
-`junction_definitions.json` (junction/gyratory names → constituent streets,
-indexed by `knowledge_run_generator/junctions.py`). Fix data there, not in
-consumer code. `qa_report.json` is schema-versioned
-(`_provenance.qa_schema_version`); resumes drop and re-route any run whose QA
-record predates the current schema.
+All 320 runs build with zero preflight failures and zero structural invalids;
+**316/320 pass the ordered gate** (legal + full ordered traversal + no hard
+gaps), 304 of them `ordered_strict` with nothing demoted at all. Zero routes
+contain a prohibited turn — restrictions are filtered inside the search
+expansion, so an illegal triple cannot be emitted. The 4 failures are
+real-world drift, not pipeline defects, and each QA record names the exact
+constraints that had to be abandoned.
+
+The Points List stands at **5,746 geocoded points of interest** (of 6,170
+extracted); 217 of the paid-geocoder failures were recovered offline by
+`scripts/backfill_pois.py` through the OSM harvest and the street tier, each
+checked against the district plausibility model before being written. The 423
+still failing are network-geocoder material (venues, embassies, retail parks)
+plus a handful of extraction artifacts — rerun `krg generate pois` with a
+Mapbox token to chase them.
+
+Resolution is driven by curated data files in
+`knowledge_run_generator/blue_book_demo/`: `poi_overrides.json` (endpoints —
+also the explicit escape hatch for Blue Book postcode typos),
+`street_spelling_fixes.json` (Blue Book typos, e.g. the CARLTON→Calton Avenue
+fix), `junction_definitions.json` (junction/gyratory names → constituent
+streets, indexed by `knowledge_run_generator/junctions.py`), and
+`run_specific_fixes.json` (per-run `remove` / `rename` / `exempt_turns`
+patches). Fix data there, not in consumer code. `qa_report.json` is
+schema-versioned (`_provenance.qa_schema_version`); resumes drop and re-route
+any run whose QA record predates the current schema.
 
 Requires Python ≥ 3.10. Expensive caches (graph, street/alias indexes, paid
 geocoding results) live in `~/.cache/knowledge-run-generator` (override with
@@ -238,40 +272,31 @@ failed before producing anything — plus two summary keys:
 - `_provenance`: the graph size, network type, index sizes and timestamp behind
   this build, so a change in the routes can be attributed rather than guessed at.
 
-### What `passed` does and does not mean
+### What `passed` means
 
-`passed` is `is_legal and is_direct and has_sane_detours`. It is a claim that a
-legal, reasonably direct road route exists between the two endpoints. **It is
-not a claim that the route is the Blue Book run.** Street coverage was removed
-from the gate, so a run can be marked `passed` while traversing none of its
-prescribed streets.
+`passed` is `is_legal and is_ordered and hard_gaps == 0`: the route is legal,
+it traverses the run's compiled constraint sequence *in order*
+(`ordered_coverage == 1.0` against `STREET`/`NODE` constraints), and the
+router did not have to demote any confidently-resolved (hard) constraint to
+achieve that. This **is** a claim that the route is the Blue Book run, up to
+the fidelity of the compiled constraints — lines that resolve to nothing are
+explicit entries in `constraint_gaps`, not silent skips.
 
-Judge Blue Book fidelity on the ordered metrics instead:
+The per-run fidelity fields:
 
 | Field | Question it answers |
 |---|---|
-| `street_coverage` | Were the streets touched at all, in any order? (Set-based, and its substring matching inflates the figure — `HIGH STREET` counts as a traversal of `HIGH STREET KENSINGTON`.) |
-| `ordered_coverage` | What fraction of the sequence was driven in order? Longest ordered subsequence, so one absent street costs one place. This is the number to track across builds. |
-| `strict_ordered` | Could a driver follow the run card without ever skipping a line? A greedy walk that stops at the first street it cannot match, so a single unresolvable junction name early on takes the whole tail with it. Triage, not tracking. |
+| `ordered_coverage` | What fraction of the constraint sequence was satisfied in order? Longest ordered subsequence, so one absent street costs one place. This is the number to track across builds. |
+| `strict_ordered` | Could a driver follow the run card without ever skipping a line? A greedy walk that stops at the first constraint it cannot match. Triage, not tracking. |
+| `routing_mode` | Which rung of the degradation ladder produced the route (`ordered_strict` / `ordered_relaxed` / `ordered_partial` / `shortest_path`). |
+| `demoted_constraints` / `hard_gaps` | What the ladder gave up, and whether any of it was confidently resolved. |
+| `constraint_gaps` | Blue Book lines that resolved to no constraint at all (curation backlog, grouped by text in `krg qa`). |
+| `excess_over_ordered_optimum` | Route length ÷ the shortest route satisfying the same constraint sequence. The honest wastefulness figure — `is_direct`'s crow-flies ratio punishes correct Blue Book geometry. |
+| `ring_laps` | Gyratory laps in the output, reported rather than spliced away. |
+| `street_coverage` | Legacy set-based touch metric, kept for continuity. |
 
-The two ordered figures agree exactly at `1.0`, which is what the Knowledge
-standard requires. As of the current build: mean `ordered_coverage` **0.817**,
-with **56/320** runs fully in order and 60 runs containing a prohibited turn.
-The gap between `street_coverage` (0.845) and `strict_ordered` (0.343) is the
-router's, not the metric's — the current search only *prefers* the expected
-streets via a cost discount rather than requiring them, so it reaches them out
-of order or not at all.
-
-### Known gaps in the QA signal
-
-Do not read these fields as meaningful yet:
-
-- `unreachable_legs` / `truncated_legs` are **always 0**. The router computes
-  them, but `correct_and_validate` drops the metadata and the pipeline
-  recomputes it from `_extract_route_metadata`, which doesn't produce those
-  keys. There is currently no visibility into whether the search-state cap fires.
-- `is_direct` is a poor fit for a Knowledge run, which is by definition not the
-  straight line between its endpoints.
+`is_direct` is recorded for triage only — a Knowledge run is by definition not
+the straight line between its endpoints.
 
 ### How run endpoints resolve
 

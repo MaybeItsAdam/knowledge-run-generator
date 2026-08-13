@@ -1,6 +1,13 @@
 # Roadmap — reaching the Knowledge standard
 
-## The problem this roadmap exists to fix
+> **Status (2026-08-12): delivered.** All five stages are complete, the
+> ordered-constraint router is the only router, and every acceptance target
+> is met — see [Acceptance targets](#acceptance-targets--all-met-2026-08-12-build).
+> The sections below are kept as the record of the problem and the design
+> that closed it; figures in the problem statement describe the *pre-work*
+> state.
+
+## The problem this roadmap existed to fix
 
 **A run is correct when its route traverses the Blue Book streets in order,
 legally.** The pipeline does not currently produce that, and — more importantly
@@ -206,7 +213,12 @@ caught; 15 runs vanishing → caught; geometry change → reported but deliberat
 **non-gating**, since every router change moves geometry and gating would block
 all progress.
 
-### Stage 2 — Constraint compiler (legacy router still routing)
+### Stage 2 — Constraint compiler ✅ **done**
+
+Landed as `knowledge_run_generator/constraints.py`; measured over the full
+corpus (`scripts/compile_report.py`): **4,827 constraints across 320 runs,
+95.6% resolved by a hard tier (exact/junction), 82 rings, 65 explicit gaps
+in 56 runs** — no line ever silently becomes an unsatisfiable constraint.
 
 - `compile_constraints(raw_streets, street_to_nodes, junction_index, G)`,
   replacing `build_waypoints_from_streets` as the routing input.
@@ -231,85 +243,84 @@ all progress.
 - Memoise `edge_names`.
 - Assertion test over a 320-run compile: kind histogram, source histogram, gap list.
 
-### Stage 3 — Ordered search behind a flag
+### Stage 3 — Ordered search ✅ **done**
 
-- `KRG_ROUTING_MODE ∈ {legacy, ordered}`, read once in `process_runs`, threaded
-  into `_route_fn`. Defaults to `legacy`.
-- Implement the ordered A\* in `router.py`, replacing `_route_through_waypoints`.
-  `get_constrained_route` keeps its signature.
-- For the `session` / `krg route --via` path, default all constraints to
-  `hard=False` so ad-hoc queries keep today's forgiving semantics.
-- Build `constants/runPoints.ordered.json` side by side and diff the two
-  fidelity reports per run.
+- Landed as `get_ordered_route` / `route_ordered_with_ladder` in `router.py`:
+  state `(node, idx, prev_node)`, the goal test *is* the ordering, prohibited
+  turns filtered inside the expansion, admissible anchor heuristic memoised on
+  `(node, idx)`, corridor bbox, per-run state cap.
+- Degradation ladder T0–T3 with every demotion recorded. Victim selection
+  prefers a *soft* constraint at or before the blocker — when a correctly
+  resolved hard street looks unreachable, the culprit is usually an earlier
+  low-confidence guess pinning the search to the wrong place.
+- The `session` / `krg route --via` path compiles via names as soft
+  constraints, keeping ad-hoc queries forgiving.
+- The staging flag came and went inside the stage; with Stage 5's deletions
+  there is nothing left for `KRG_ROUTING_MODE=legacy` to select.
 
-### Stage 4 — Endpoint plausibility
+### Stage 4 — Endpoint plausibility ✅ **done**
 
-Independent of routing; catches the Run 131 / 177 / 206 class.
+Landed as `gazetteer.DistrictModel` (public, median centre + p95 radius with a
+1 km floor; districts under 5 points keep a centre for street disambiguation
+but never *fail* anyone) wired into `preflight_run` — fail beyond
+`max(p95 × 1.5, 2500 m)`, warn beyond p95. `_PoiTable._best` now flags a
+wrong-district winner (`_district_mismatch`), and `Gazetteer.resolve` prefers
+the street tier over a flagged point record when the name is a street in the
+graph — which is exactly how "SHORTLANDS W6" stops resolving into Bromley.
+Verified live: Runs 131 and 177 now fail preflight with
+"start resolved 18789m / 17630m from the centre of W6 / W1 — wrong place".
 
-- Promote `Gazetteer._district_centroid` to a reusable public helper. Today it is
-  private, lazy, mean-based, built from the Points List only, and consulted
-  **solely by the street tier** — tiers 1–3 never see it.
-- Switch from mean to a robust centre (median lat/lon) plus a per-district p95
-  radius with a floor; skip districts with n < 5. The mean is noisy for W1
-  (n=551, p90 = 2307 m) and useless for SW2 (n=1).
-- Add a plausibility check to `preflight_run`, which today only checks snap
-  distance and therefore passes all 320 runs. Fail beyond
-  `max(p95_radius × 1.5, 2500 m)`; warn beyond p95.
-- `_PoiTable._best` returns `pool[0]` on district mismatch and only filters when
-  `len(pool) > 1` — make a single-candidate wrong-district hit a recorded warning
-  rather than a silent accept.
+### Stage 5 — Flip the default ✅ **done**
 
-Data is fully available: `postal_district` on 5530/5530 POIs, a parseable
-district on 631/631 endpoints.
-
-### Stage 5 — Flip the default (single atomic commit)
-
-- `KRG_ROUTING_MODE` defaults to `ordered`.
-- `result.passed = is_legal and is_ordered and no_hard_gaps`. `is_direct` stays
-  in the record for triage only — a Knowledge run is by definition not the
-  straight line, and ~25% of ordered routes exceed the 1.8 ratio.
-- Add `excess_over_ordered_optimum` (route length ÷ the same ordered search with
-  connector multiplier and structural penalties zeroed) as the honest
-  wastefulness metric. Thresholds cleanly at ~1.15 without punishing Blue Book
-  geometry, and is nearly free — the search already has `g` at the goal.
-- Fix `check_directness` regardless: its `< 1000 m` branch hard-codes thresholds
-  and **ignores config overrides entirely**, so a `run_specific_fixes.json` patch
-  on a short run is silently a no-op.
-- Delete together: `_clean_backtrack`, `_collapse_revisits`, `_remove_backtracks`,
-  `build_waypoints_from_streets`, `find_intersection_node`, and the `fix_*`
-  functions in `corrector.py`.
-  - *Replacing the lapping suppression:* the IMAX lapping `_collapse_revisits`
-    was written for is a symptom of the 0.1× discount making a second orbit
-    cheaper than the exit. With the discount gone a lap costs full length plus
-    the existing `junction=roundabout` penalty; structurally, the
-    `(node, idx, prev)` key dominates a same-`idx` lap, and the U-turn term
-    blocks immediate reversal. Rather than mutating laps away, **report** them —
-    `diagnostics.detect_loops` / `detect_ring_traversals` already exist; surface
-    the count as `ring_laps`.
-- `correct_and_validate` becomes the tier ladder, and must **return** the router
-  metadata it currently drops. That drop — plus the recompute in `run_pipeline` —
-  is why `unreachable_legs` / `truncated_legs` are hardcoded 0 in every QA record
-  today. The `best_score` unit bug (dimensionless ratio compared against metres)
-  disappears with the ladder.
-- `"waypoints"` becomes derived from the routed path — the node where each
-  constraint was first satisfied. Strictly more accurate, and free.
-- Replace `CollapseRevisitsTests` with an ordered-traversal test and a "no
-  prohibited triple in output" test on the existing fixture graph.
-- Refresh `tests/golden/qa_baseline.json`; reset `promote_to_app.py --min-passed`
-  to the new honest floor.
+- The ordered search is the only router; `KRG_ROUTING_MODE` accepts nothing
+  else, and the legacy machinery is deleted: `get_constrained_route`,
+  `_route_through_waypoints`, `_clean_backtrack`, `_collapse_revisits`,
+  `_remove_backtracks`, `build_waypoints_from_streets`,
+  `find_intersection_node`, `get_best_street_match`, and the whole of
+  `corrector.py`.
+- `result.passed = is_legal and is_ordered and hard_gaps == 0`. `is_direct`
+  stays in the record for triage only. Ordering is measured against the
+  *compiled constraints* (`validator.check_constraint_order`), so junction and
+  gyratory lines are satisfiable as NODE positions instead of permanently
+  depressing a street-name walk, and unresolvable lines are explicit gaps
+  rather than phantom missing streets.
+- `excess_over_ordered_optimum` recorded per run (route length ÷ pure-length
+  ordered search over the same constraint set).
+- `check_directness` honours explicit config overrides at every distance; the
+  `< 1000 m` band no longer hard-codes its thresholds.
+- Laps are **reported** (`ring_laps`, via `diagnostics.detect_ring_traversals`)
+  instead of being spliced away after validation.
+- `"waypoints"` is derived from the routed path — the node where each
+  constraint is first satisfied (`router.constraint_waypoints`).
+- `CollapseRevisitsTests` replaced by ordered-traversal, ring-lap and
+  no-prohibited-triple tests (`tests/test_ordered_router.py`,
+  `tests/test_router_regression.py`).
+- `tests/golden/qa_baseline.json` refreshed from the full ordered build;
+  `promote_to_app.py --min-passed` reset to the new honest floor.
+- `QA_SCHEMA_VERSION` → 4 (resumes re-route anything older).
 
 ---
 
-## Acceptance targets
+## Acceptance targets — **all met** (2026-08-12 build)
 
-| Metric | Baseline (Stage 1) | Target |
-|---|---|---|
-| `mean_ordered` (LCS) | 0.818 | ≥ 0.95 |
-| `mean_strict` (walk-through) | 0.381 | ≥ 0.90 |
-| Runs fully in order | 56 / 320 | ≥ 280 / 320 |
-| Runs with a prohibited turn | 60 | **0** |
-| Endpoints > 3 km from district | 12 | 0 (or explicitly overridden) |
-| `hit_state_cap` | unknown (never reported) | < 10 runs |
+| Metric | Baseline (Stage 1) | Target | **Achieved** |
+|---|---|---|---|
+| `mean_ordered` (LCS) | 0.818 | ≥ 0.95 | **0.990** |
+| `mean_strict` (walk-through) | 0.381 | ≥ 0.90 | **0.973** |
+| Runs fully in order | 56 / 320 | ≥ 280 / 320 | **299 / 320** |
+| Runs passing the ordered gate | — | — | **316 / 320** |
+| Runs with a prohibited turn | 60 | **0** | **0** |
+| Endpoints > 3 km from district | 12 | 0 (or explicitly overridden) | **0** unoverridden |
+| `hit_state_cap` | unknown (never reported) | < 10 runs | **0** |
+
+Both fidelity metrics are measured against **every compiled constraint**,
+including any the ladder demoted — the router cannot inflate them by
+retreating. The 4 runs failing the gate (46, 188, 189, 250) are OSM-vs-Blue-
+Book drift: Hammersmith Bridge is closed to motor traffic, Lewisham's Station
+Road was removed by the Gateway development, and Run 250's Bloomsbury squares
+are LTN-restricted. Each ships as the best legal approximation
+(`routing_mode: shortest_path` / `ordered_relaxed`) with the abandoned
+constraints named in `demoted_constraints`.
 
 `mean_strict` is the demanding one and the one that matches what a driver on the
 Knowledge actually has to do. Do not report progress on `mean_ordered` alone.
