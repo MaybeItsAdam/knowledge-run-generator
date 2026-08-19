@@ -43,8 +43,19 @@ reported but non-gating; why both ordered metrics are tracked).
   prescribed streets. Never quote it as a correctness figure on its own.
 - Blue Book fidelity is `ordered_coverage` (track this) and `strict_ordered`
   (triage with this). Both are in `qa_report.json` and surfaced by `krg qa`.
-- Current baseline: mean `ordered_coverage` 0.817, 56/320 runs fully in order,
-  60 runs containing a prohibited turn. Do not report the corpus as healthy on
-  the strength of the 227 `passed` count.
+- Current baseline (`krg regression snapshot`, 320 runs): 316 `passed`, mean
+  `ordered_coverage` 0.991, mean `strict_ordered` 0.974, 303/320 runs fully in
+  Blue Book order, **0 legality failures**, 0 preflight failures. Routing mode
+  splits 303 `ordered_strict` / 15 `ordered_relaxed` / 2 `shortest_path`.
+- The open front is directness: 70 runs exceed the ratio threshold
+  (`is_direct: false`) without failing the gate. That, plus the 17 runs not
+  fully ordered and the 4 not passing (46, 188, 189, 250 — OSM-vs-Blue-Book
+  drift such as the Hammersmith Bridge closure), is what is left.
+- Step text is not a fidelity metric. `ordered_coverage` / `strict_ordered` are
+  computed from the graph edges the route traverses (`_route_edge_names`), not
+  from `route.steps`, so changing how the call is worded cannot move them.
 - `unreachable_legs` / `truncated_legs` are always 0 and mean nothing yet; the
   router's metadata is dropped before it reaches the QA record.
+- Prefer `krg generate runs --fresh` when judging the corpus. A plain
+  `generate runs` resumes, keeping runs produced by older code, which is how a
+  build ended up quoting 299 fully-ordered when a clean rebuild scored 303.
