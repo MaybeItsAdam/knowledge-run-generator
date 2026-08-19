@@ -1,9 +1,9 @@
 {
   "directness_fails": 70,
-  "fully_ordered": 299,
+  "fully_ordered": 303,
   "legality_fails": 0,
-  "mean_ordered": 0.99,
-  "mean_strict": 0.9726,
+  "mean_ordered": 0.9908,
+  "mean_strict": 0.974,
   "passed": 316,
   "preflight_fails": 0,
   "runs": {
@@ -484,15 +484,15 @@
       "strict_ordered": 1.0
     },
     "13": {
-      "distance_m": 7797.3,
+      "distance_m": 9058.5,
       "is_direct": false,
       "legal": true,
-      "node_count": 111,
-      "ordered_coverage": 0.9,
+      "node_count": 128,
+      "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.6,
-      "route_hash": "b79c94cbc547",
+      "ratio": 1.858,
+      "route_hash": "73e76bf6b385",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.9,
       "strict_ordered": 1.0
@@ -792,15 +792,15 @@
       "strict_ordered": 1.0
     },
     "15": {
-      "distance_m": 9504.8,
+      "distance_m": 9423.4,
       "is_direct": true,
       "legal": true,
-      "node_count": 94,
+      "node_count": 91,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.504,
-      "route_hash": "f1d93de6a576",
+      "ratio": 1.506,
+      "route_hash": "801d55f3ea58",
       "routing_mode": "ordered_strict",
       "street_coverage": 1.0,
       "strict_ordered": 1.0
@@ -862,15 +862,15 @@
       "strict_ordered": 1.0
     },
     "154": {
-      "distance_m": 8613.3,
+      "distance_m": 8714.4,
       "is_direct": true,
       "legal": true,
-      "node_count": 92,
+      "node_count": 93,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.421,
-      "route_hash": "15bc5d4950a4",
+      "ratio": 1.426,
+      "route_hash": "103d14aa8e80",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.95,
       "strict_ordered": 1.0
@@ -1212,15 +1212,15 @@
       "strict_ordered": 1.0
     },
     "177": {
-      "distance_m": 10860.3,
+      "distance_m": 11013.2,
       "is_direct": false,
       "legal": true,
-      "node_count": 143,
-      "ordered_coverage": 0.962,
+      "node_count": 153,
+      "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 2.195,
-      "route_hash": "dc9c19ff741e",
+      "ratio": 2.226,
+      "route_hash": "2655ad38b09a",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.962,
       "strict_ordered": 1.0
@@ -1240,15 +1240,15 @@
       "strict_ordered": 1.0
     },
     "179": {
-      "distance_m": 8432.1,
+      "distance_m": 7872.3,
       "is_direct": false,
       "legal": true,
-      "node_count": 64,
+      "node_count": 60,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.671,
-      "route_hash": "bf516fbbb6ad",
+      "ratio": 1.578,
+      "route_hash": "caaef95815dc",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.929,
       "strict_ordered": 1.0
@@ -1352,15 +1352,15 @@
       "strict_ordered": 1.0
     },
     "186": {
-      "distance_m": 8931.8,
+      "distance_m": 8869.0,
       "is_direct": true,
       "legal": true,
-      "node_count": 147,
+      "node_count": 140,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.546,
-      "route_hash": "06c622f87792",
+      "ratio": 1.535,
+      "route_hash": "7b685ad82b7e",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.833,
       "strict_ordered": 1.0
@@ -1394,16 +1394,16 @@
       "strict_ordered": 0.167
     },
     "189": {
-      "distance_m": 7620.4,
+      "distance_m": 7454.5,
       "is_direct": false,
       "legal": true,
-      "node_count": 78,
+      "node_count": 77,
       "ordered_coverage": 0.895,
       "passed": false,
       "preflight_ok": true,
-      "ratio": 1.765,
-      "route_hash": "656de29aab7d",
-      "routing_mode": "shortest_path",
+      "ratio": 1.794,
+      "route_hash": "22f75d1d06a6",
+      "routing_mode": "ordered_relaxed",
       "street_coverage": 0.882,
       "strict_ordered": 0.316
     },
@@ -1422,18 +1422,18 @@
       "strict_ordered": 1.0
     },
     "190": {
-      "distance_m": 7973.8,
+      "distance_m": 8702.9,
       "is_direct": true,
       "legal": true,
-      "node_count": 93,
-      "ordered_coverage": 0.944,
+      "node_count": 102,
+      "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.352,
-      "route_hash": "fbffaefbd094",
+      "ratio": 1.476,
+      "route_hash": "e45a9bdbcb85",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.944,
-      "strict_ordered": 0.556
+      "strict_ordered": 1.0
     },
     "191": {
       "distance_m": 3553.2,
@@ -1870,15 +1870,15 @@
       "strict_ordered": 1.0
     },
     "219": {
-      "distance_m": 11502.9,
+      "distance_m": 9960.0,
       "is_direct": false,
       "legal": true,
-      "node_count": 132,
+      "node_count": 117,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 2.531,
-      "route_hash": "aadf3735e09f",
+      "ratio": 2.191,
+      "route_hash": "1fb98fde6df4",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.957,
       "strict_ordered": 1.0
@@ -2626,15 +2626,15 @@
       "strict_ordered": 1.0
     },
     "268": {
-      "distance_m": 6029.8,
+      "distance_m": 6082.7,
       "is_direct": true,
       "legal": true,
-      "node_count": 94,
+      "node_count": 95,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.232,
-      "route_hash": "94602dd5854b",
+      "ratio": 1.229,
+      "route_hash": "26b3a2f74581",
       "routing_mode": "ordered_strict",
       "street_coverage": 1.0,
       "strict_ordered": 1.0
@@ -2794,16 +2794,16 @@
       "strict_ordered": 1.0
     },
     "279": {
-      "distance_m": 8653.0,
-      "is_direct": false,
+      "distance_m": 7298.4,
+      "is_direct": true,
       "legal": true,
-      "node_count": 114,
+      "node_count": 92,
       "ordered_coverage": 0.917,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.901,
-      "route_hash": "ee6f9b571ded",
-      "routing_mode": "ordered_strict",
+      "ratio": 1.603,
+      "route_hash": "f1c0b0015763",
+      "routing_mode": "ordered_relaxed",
       "street_coverage": 1.0,
       "strict_ordered": 0.75
     },
@@ -2864,15 +2864,15 @@
       "strict_ordered": 1.0
     },
     "283": {
-      "distance_m": 5428.3,
+      "distance_m": 5115.2,
       "is_direct": true,
       "legal": true,
-      "node_count": 62,
+      "node_count": 61,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.257,
-      "route_hash": "ce0cdd8ce6d2",
+      "ratio": 1.212,
+      "route_hash": "a848f7a4f76f",
       "routing_mode": "ordered_strict",
       "street_coverage": 1.0,
       "strict_ordered": 1.0
@@ -3018,15 +3018,15 @@
       "strict_ordered": 1.0
     },
     "293": {
-      "distance_m": 7192.0,
-      "is_direct": true,
+      "distance_m": 7460.8,
+      "is_direct": false,
       "legal": true,
-      "node_count": 103,
+      "node_count": 106,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.625,
-      "route_hash": "87c7048428f0",
+      "ratio": 1.686,
+      "route_hash": "860fc5e92da5",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.875,
       "strict_ordered": 1.0
@@ -3760,15 +3760,15 @@
       "strict_ordered": 1.0
     },
     "52": {
-      "distance_m": 8484.9,
+      "distance_m": 9746.2,
       "is_direct": true,
       "legal": true,
-      "node_count": 120,
-      "ordered_coverage": 0.958,
+      "node_count": 137,
+      "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.548,
-      "route_hash": "baf3cd1c24c6",
+      "ratio": 1.778,
+      "route_hash": "508b508aa17a",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.958,
       "strict_ordered": 1.0
@@ -4208,15 +4208,15 @@
       "strict_ordered": 1.0
     },
     "81": {
-      "distance_m": 6332.6,
+      "distance_m": 6269.8,
       "is_direct": true,
       "legal": true,
-      "node_count": 102,
+      "node_count": 95,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 1.28,
-      "route_hash": "27348b809b0e",
+      "ratio": 1.267,
+      "route_hash": "b6fe702368c5",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.933,
       "strict_ordered": 1.0
@@ -4418,15 +4418,15 @@
       "strict_ordered": 1.0
     },
     "95": {
-      "distance_m": 11541.3,
+      "distance_m": 11402.2,
       "is_direct": false,
       "legal": true,
-      "node_count": 156,
+      "node_count": 154,
       "ordered_coverage": 1.0,
       "passed": true,
       "preflight_ok": true,
-      "ratio": 2.163,
-      "route_hash": "d6a8ef859b84",
+      "ratio": 2.13,
+      "route_hash": "fde808a2838e",
       "routing_mode": "ordered_strict",
       "street_coverage": 0.938,
       "strict_ordered": 1.0
