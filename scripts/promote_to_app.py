@@ -8,7 +8,11 @@ dataset (the failure mode that left it at 30/320 runs).
 
 It refuses to overwrite the app's files unless:
   * runPoints.json contains every expected run id (default 1..320), and
-  * knowledgePois.json is a non-empty list of geocoded points.
+  * knowledgePois.json clears its floors and its shape checks: enough geocoded
+    points, enough of them carrying a borough, every record's ``category``
+    drawn from the closed taxonomy, no emergency or fuel "station" filed as
+    transport, and a ``transport_modes`` list on every record whose entries
+    are all in the closed vocabulary.
 
 Use ``--allow-partial`` to promote anyway (prints what's missing first).
 
@@ -27,6 +31,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from knowledge_run_generator.poi_categories import (  # noqa: E402
+    CATEGORIES,
+    TRANSPORT_MODES,
+    is_non_transport_station_name,
+)
+
 DEFAULT_APP = ROOT.parent / "the-blue-app"
 
 # (source in generator) -> (destination filename in the app's constants/)
@@ -64,18 +76,79 @@ def validate_runs(expected: int) -> tuple[bool, list[int]]:
     return not missing, missing
 
 
-def validate_pois() -> bool:
+def _sample(names: list[str], limit: int = 5) -> str:
+    shown = ", ".join(sorted(names)[:limit])
+    return shown + (" ..." if len(names) > limit else "")
+
+
+def validate_pois(min_pois: int, min_enriched: int) -> bool:
+    """Gate the POI file on shape, not just on being non-empty.
+
+    Floors rather than exact counts, in the style of ``--min-passed``: the row
+    count moves whenever the Points List edition or the geocoder does, and a
+    gate that has to be edited every build stops being read.
+
+    Deliberately *not* gated: ``yellow_badge_sector``. It is null in 4,972 of
+    5,746 rows by design (the central green-badge boroughs have no sector), so
+    a floor on it would only measure how much of London is in the middle.
+    """
     pois = _load_json(POIS_SRC)
-    ok = isinstance(pois, list) and len(pois) > 0
-    n = len(pois) if isinstance(pois, list) else 0
-    print(f"  pois: {n} geocoded points" + (" ✓" if ok else " — EMPTY/MISSING"))
-    if ok:
-        # The app relies on borough/sector enrichment; promoting an unenriched
-        # build (e.g. one made with missing reference data) is a regression.
-        enriched = sum(1 for p in pois if isinstance(p, dict) and "borough" in p)
-        print(f"  pois enriched with borough/sector: {enriched}/{n}"
-              + (" ✓" if enriched else " — MISSING ENRICHMENT"))
-        ok = enriched > 0
+    if not isinstance(pois, list):
+        print(f"  ! {POIS_SRC} missing or not a list")
+        return False
+    records = [p for p in pois if isinstance(p, dict)]
+    n = len(records)
+    ok = n >= min_pois
+    print(f"  pois: {n} geocoded points (floor {min_pois})"
+          + (" ✓" if ok else ": TOO FEW"))
+    if n != len(pois):
+        print(f"  ! {len(pois) - n} entries are not objects")
+        ok = False
+
+    # The app relies on borough/sector enrichment; promoting an unenriched
+    # build (e.g. one made with missing reference data) is a regression.
+    enriched = sum(1 for p in records if p.get("borough"))
+    enriched_ok = enriched >= min_enriched
+    print(f"  pois enriched with a borough: {enriched}/{n} (floor {min_enriched})"
+          + (" ✓" if enriched_ok else ": MISSING ENRICHMENT"))
+    ok = ok and enriched_ok
+
+    # Every record must carry a category the app knows how to render.
+    unknown = [p.get("name", "?") for p in records if p.get("category") not in CATEGORIES]
+    print(f"  pois with a known category: {n - len(unknown)}/{n}"
+          + (" ✓" if not unknown else f": {len(unknown)} unknown, {_sample(unknown)}"))
+    ok = ok and not unknown
+
+    # The direct regression gate for the taxonomy bug: a fire, police,
+    # ambulance, lifeboat, petrol or power "station" filed as transport. These
+    # were 71 of the 330 `station` rows in the last promoted build, and they
+    # fed the gazetteer's station snapping, so they could move an endpoint.
+    leaked = [p.get("name", "?") for p in records
+              if p.get("category") == "station"
+              and is_non_transport_station_name(str(p.get("name", "")))]
+    print(f"  pois wrongly filed as transport stations: {len(leaked)}"
+          + (" ✓" if not leaked else f": {_sample(leaked)}"))
+    ok = ok and not leaked
+
+    # transport_modes is always present and always a list, even while nothing
+    # populates it, so a consumer can iterate without a null check.
+    missing_modes = [p.get("name", "?") for p in records
+                     if not isinstance(p.get("transport_modes"), list)]
+    print(f"  pois with a transport_modes list: {n - len(missing_modes)}/{n}"
+          + (" ✓" if not missing_modes else
+             f": {len(missing_modes)} missing, {_sample(missing_modes)}"))
+    ok = ok and not missing_modes
+
+    bad_modes = sorted({
+        str(mode)
+        for p in records
+        for mode in (p.get("transport_modes") or [])
+        if mode not in TRANSPORT_MODES
+    })
+    if bad_modes:
+        print(f"  ! transport_modes outside the vocabulary: {_sample(bad_modes)}")
+        ok = False
+
     return ok
 
 
@@ -195,6 +268,13 @@ def main() -> int:
     # explicit OSM-vs-Blue-Book drift (e.g. Hammersmith Bridge closure).
     parser.add_argument("--min-passed", type=int, default=305,
                         help="Minimum QA-passed run count required to promote.")
+    # Floors, not exact counts: the row count moves with the Points List
+    # edition and with the geocoder's success rate. Current build: 5,746 rows,
+    # 5,530 of them carrying a borough.
+    parser.add_argument("--min-pois", type=int, default=5000,
+                        help="Minimum geocoded POI count required to promote.")
+    parser.add_argument("--min-enriched-pois", type=int, default=5000,
+                        help="Minimum POIs carrying a borough required to promote.")
     parser.add_argument("--allow-partial", action="store_true",
                         help="Promote even if runs are incomplete or POIs missing.")
     parser.add_argument("--skip-regression", action="store_true",
@@ -215,7 +295,7 @@ def main() -> int:
 
     print(f"Validating generator outputs in {ROOT / 'constants'} ...")
     runs_ok, _missing = validate_runs(args.expected)
-    pois_ok = validate_pois()
+    pois_ok = validate_pois(args.min_pois, args.min_enriched_pois)
     qa_ok = validate_qa(args.min_passed)
     regression_ok = True if args.skip_regression else validate_regression()
 

@@ -18,7 +18,13 @@ Layout facts (confirmed against Edition 4 geometry, A4 595x842pt):
     wraps onto a second line sits only ~13pt below its first line.
 
 Outputs constants/extracted_pois.json: a list of
-  {name, postal_district, region, category, kind, source_page}.
+  {name, postal_district, region, category, kind, source_page,
+   transport_modes, transport_modes_source}.
+
+``transport_modes`` is always present and always a list, and is always empty
+here: the Points List names a station without saying which lines serve it, and
+the OSM harvest that would fill it in is out of scope. See
+``knowledge_run_generator.poi_categories.TRANSPORT_MODES``.
 """
 
 from __future__ import annotations
@@ -26,12 +32,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 import pdfplumber
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+# The name-to-category taxonomy lives in the package so tests and the promotion
+# gate can import it without loading this script by file path.
+from knowledge_run_generator.poi_categories import infer_category as _infer_category  # noqa: E402
 
 # The Points List PDF is committed at the repo root, so the default works on
 # any checkout. Override with --pdf to parse a newer edition.
@@ -54,38 +66,6 @@ _POSTCODE_HEADER_RE = re.compile(r"^([A-Z]{1,2}\d{1,2}[A-Z]?)\s*[-–—]\s*(.*)
 _CURIOSITY_TITLE_RE = re.compile(
     r"^(.*?)\s*[-–—]?\s*([A-Z]{1,2}\d{1,2}[A-Z]?)\s*$"
 )
-
-_CATEGORY_KEYWORDS = [
-    ("station", "station"),
-    ("theatre", "theatre"),
-    ("cinema", "cinema"),
-    ("hotel", "hotel"),
-    ("museum", "museum"),
-    ("gallery", "gallery"),
-    ("hospital", "hospital"),
-    ("library", "library"),
-    ("church", "church"),
-    ("park", "park"),
-    ("square", "square"),
-    ("bridge", "bridge"),
-    ("restaurant", "restaurant"),
-    ("school", "school"),
-    ("college", "college"),
-    ("university", "university"),
-]
-
-
-def _infer_category(name: str) -> str:
-    low = name.lower()
-    if re.search(r"\bph\b", low) or low.endswith(" ph") or " ph " in low:
-        return "pub"
-    for keyword, category in _CATEGORY_KEYWORDS:
-        if keyword in low:
-            return category
-    if re.search(r"\b(road|street|lane|avenue|villas|gardens|place|way|walk|hill)\b", low):
-        return "street"
-    return "point"
-
 
 def _cluster_lines(words):
     """Group extracted words into physical text lines keyed by rounded top."""
@@ -179,6 +159,8 @@ def extract(pdf_path: Path, limit: int | None = None):
                     "category": _infer_category(name),
                     "kind": mode,
                     "source_page": section_page,
+                    "transport_modes": [],
+                    "transport_modes_source": None,
                 }
             )
         section_body = []
@@ -278,6 +260,8 @@ def _handle_curiosity_line(records, line, region, page_no):
             "category": _infer_category(name),
             "kind": "curiosity",
             "source_page": page_no,
+            "transport_modes": [],
+            "transport_modes_source": None,
         }
     )
 

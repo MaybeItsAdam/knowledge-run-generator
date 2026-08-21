@@ -1,0 +1,368 @@
+{
+  "_comment": "Pinned output of knowledge_run_generator.poi_categories.infer_category. Entries carrying a `note` record an answer that is still not right, with the reason it is being left that way.",
+  "entries": [
+    {
+      "name": "Angel Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Waterloo Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Barnes Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Barbican Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Barnes Bridge Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Bethnal Green Underground Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Brixton Tube Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Abbey Road DLR Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Battersea Power Station Underground Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Bow Church DLR",
+      "expected_category": "station"
+    },
+    {
+      "name": "Langdon Park DLR",
+      "expected_category": "station"
+    },
+    {
+      "name": "All Saints DLR",
+      "expected_category": "station"
+    },
+    {
+      "name": "Stratford High Street DLR",
+      "expected_category": "station"
+    },
+    {
+      "name": "Victoria Coach Station Arrivals + Taxi Rank",
+      "expected_category": "coach_station"
+    },
+    {
+      "name": "Golders Green Bus Station",
+      "expected_category": "bus_station"
+    },
+    {
+      "name": "Willesden Bus Garage",
+      "expected_category": "bus_garage"
+    },
+    {
+      "name": "Westbourne Park Bus Garage",
+      "expected_category": "bus_garage"
+    },
+    {
+      "name": "Aldgate Bus Garage",
+      "expected_category": "bus_garage"
+    },
+    {
+      "name": "Holloway Fire Station",
+      "expected_category": "fire_station"
+    },
+    {
+      "name": "Stoke Newington Police Station",
+      "expected_category": "police_station"
+    },
+    {
+      "name": "British Transport Police Station E15",
+      "expected_category": "police_station"
+    },
+    {
+      "name": "Islington Ambulance Station",
+      "expected_category": "ambulance_station"
+    },
+    {
+      "name": "RNLI Tower Lifeboat Station",
+      "expected_category": "lifeboat_station"
+    },
+    {
+      "name": "Chiswick Pier + Lifeboat Station RNLI",
+      "expected_category": "lifeboat_station"
+    },
+    {
+      "name": "Shell Petrol Station N10",
+      "expected_category": "fuel"
+    },
+    {
+      "name": "BP Petrol Station Vauxhall Bridge Road",
+      "expected_category": "fuel"
+    },
+    {
+      "name": "Battersea Power Station",
+      "expected_category": "point"
+    },
+    {
+      "name": "Battersea Power Station Pier",
+      "expected_category": "point"
+    },
+    {
+      "name": "Old Millwall Fire Station Restaurant",
+      "expected_category": "restaurant"
+    },
+    {
+      "name": "Fire Station SE1 (Restaurant / Bar)",
+      "expected_category": "restaurant"
+    },
+    {
+      "name": "No 197 Chiswick Fire Station Bar",
+      "expected_category": "bar"
+    },
+    {
+      "name": "Art'otel London Battersea Power Station",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Premier Inn London Southwark - Southwark Station Hotel",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Stationers Hall",
+      "expected_category": "point"
+    },
+    {
+      "name": "Camberwell Station Road",
+      "expected_category": "street"
+    },
+    {
+      "name": "Uxbridge Road",
+      "expected_category": "street"
+    },
+    {
+      "name": "Cambridge Heath Road",
+      "expected_category": "street"
+    },
+    {
+      "name": "Knightsbridge Green",
+      "expected_category": "point"
+    },
+    {
+      "name": "Oxford & Cambridge Club",
+      "expected_category": "club"
+    },
+    {
+      "name": "Pembridge Hall School",
+      "expected_category": "school"
+    },
+    {
+      "name": "Fenchurch Street",
+      "expected_category": "street"
+    },
+    {
+      "name": "Christchurch Road",
+      "expected_category": "street"
+    },
+    {
+      "name": "Churchill War Rooms",
+      "expected_category": "point"
+    },
+    {
+      "name": "Parker Street",
+      "expected_category": "street"
+    },
+    {
+      "name": "Citadines Barbican Aparthotel",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Royal National ENT and Eastman Dental Hospitals",
+      "expected_category": "hospital"
+    },
+    {
+      "name": "Millenium & Copthorne Hotels at Chelsea Football Club",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "45 Park Lane Hotel (+ CUT at 45 Park Lane Restaurant)",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Virgin Hotels London Shoreditch",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Institute of Contemporary Arts ICA Galleries",
+      "expected_category": "gallery"
+    },
+    {
+      "name": "Art'otel London Hoxton",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "100 Club",
+      "expected_category": "club"
+    },
+    {
+      "name": "Barnes Rugby Football Club",
+      "expected_category": "club"
+    },
+    {
+      "name": "Alchemist Bar EC3",
+      "expected_category": "bar"
+    },
+    {
+      "name": "Bar Italia – Coffee Shop",
+      "expected_category": "bar"
+    },
+    {
+      "name": "Café Med",
+      "expected_category": "cafe"
+    },
+    {
+      "name": "YHA Central Hostel",
+      "expected_category": "hostel"
+    },
+    {
+      "name": "Old Queen Street Cafe",
+      "expected_category": "cafe"
+    },
+    {
+      "name": "Barbican Cinema Cafe & Bar",
+      "expected_category": "cinema"
+    },
+    {
+      "name": "Canal Cafe Theatre at The Bridge House PH",
+      "expected_category": "pub"
+    },
+    {
+      "name": "Village Underground",
+      "expected_category": "station",
+      "note": "known imprecision: a music venue, but the bare `underground` transport rule claims it; the rule earns its keep on real station names"
+    },
+    {
+      "name": "The Gore London - Starhotels Collezione",
+      "expected_category": "point",
+      "note": "known imprecision: `Starhotels` is spelled solid, so the word-bounded hotel rule cannot see it"
+    },
+    {
+      "name": "Andaz Hotel",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "A Toca Restaurant",
+      "expected_category": "restaurant"
+    },
+    {
+      "name": "George Inn PH",
+      "expected_category": "pub"
+    },
+    {
+      "name": "Aldermanbury Square",
+      "expected_category": "square"
+    },
+    {
+      "name": "Aberdeen Park",
+      "expected_category": "park"
+    },
+    {
+      "name": "Adelphi Theatre",
+      "expected_category": "theatre"
+    },
+    {
+      "name": "All Souls Church",
+      "expected_category": "church"
+    },
+    {
+      "name": "Balham Library",
+      "expected_category": "library"
+    },
+    {
+      "name": "Albert Bridge",
+      "expected_category": "bridge"
+    },
+    {
+      "name": "Bluecoat School",
+      "expected_category": "school"
+    },
+    {
+      "name": "Cromwell Hospital",
+      "expected_category": "hospital"
+    },
+    {
+      "name": "Bacons College",
+      "expected_category": "college"
+    },
+    {
+      "name": "British Museum",
+      "expected_category": "museum"
+    },
+    {
+      "name": "BFI IMAX Cinema SE1",
+      "expected_category": "cinema"
+    },
+    {
+      "name": "Bankside Gallery",
+      "expected_category": "gallery"
+    },
+    {
+      "name": "City University",
+      "expected_category": "university"
+    },
+    {
+      "name": "Abbeville Road",
+      "expected_category": "street"
+    },
+    {
+      "name": "02 Arena",
+      "expected_category": "point"
+    }
+  ],
+  "distribution": {
+    "_comment": "Category histogram over every name the extractor pulls out of the committed Points List PDF. Held to a tolerance, not to the digit: the point is that a rule edit cannot silently move hundreds of rows.",
+    "source": "knowledge-of-london-points-list.pdf",
+    "total": 6166,
+    "total_tolerance_fraction": 0.01,
+    "tolerance_fraction": 0.03,
+    "tolerance_floor": 5,
+    "counts": {
+      "point": 2066,
+      "street": 1664,
+      "hotel": 357,
+      "station": 275,
+      "restaurant": 240,
+      "pub": 219,
+      "square": 193,
+      "park": 170,
+      "club": 165,
+      "theatre": 117,
+      "school": 88,
+      "library": 78,
+      "church": 77,
+      "bar": 63,
+      "hospital": 58,
+      "bridge": 52,
+      "college": 50,
+      "museum": 50,
+      "fire_station": 37,
+      "cinema": 29,
+      "gallery": 29,
+      "cafe": 22,
+      "police_station": 17,
+      "university": 15,
+      "ambulance_station": 9,
+      "bus_garage": 9,
+      "fuel": 9,
+      "hostel": 3,
+      "coach_station": 2,
+      "lifeboat_station": 2,
+      "bus_station": 1
+    }
+  }
+}
