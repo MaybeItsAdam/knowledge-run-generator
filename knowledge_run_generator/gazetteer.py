@@ -66,7 +66,14 @@ _STATION_TOKENS = frozenset({
     "TUBE", "UNDERGROUND", "OVERGROUND", "DLR", "LU",
 })
 
-_STATION_KINDS = frozenset({"station"})
+# Kinds that make a candidate station-like when a query asks for a station.
+# ``station`` is the OSM harvest's kind; the two bus/coach leaves come from the
+# Points List taxonomy (``knowledge_run_generator.poi_categories``), which used
+# to file them as plain ``station`` too. Listing them here keeps the
+# station-like set a strict subset of what it was: the only records that leave
+# it are the fire, police, ambulance, lifeboat and petrol "stations", which are
+# not places a run can start or finish at under that name.
+_STATION_KINDS = frozenset({"station", "bus_station", "coach_station"})
 
 
 def _looks_like_station(name: str) -> bool:

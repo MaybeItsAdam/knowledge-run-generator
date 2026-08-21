@@ -18,42 +18,182 @@ reasons:
 
 It follows the shape of ``knowledge_run_generator.poi_enrichment``: the logic
 sits in the package, the script on top of it stays thin.
+
+How the rules work
+------------------
+
+An ordered list of ``(compiled regex, category)`` pairs, first match wins.
+Order is the whole design; the levels below are the reasoning, and moving a
+rule between them is a behaviour change, not a tidy-up.
+
+0. **Exclusions.** A name where ``Station`` is part of a *street* name, and
+   names where a hospitality noun sits next to a transport noun. Hospitality
+   outranks transport: ``Old Millwall Fire Station Restaurant`` is a
+   restaurant, ``Fire Station SE1 (Restaurant / Bar)`` is a restaurant, and
+   ``Premier Inn London Southwark - Southwark Station Hotel`` is a hotel. One
+   rule, three classes of leak.
+1. **Specific compounds before generic nouns.** ``fire station`` is not a
+   station in the sense a cab driver means, and neither are the police,
+   ambulance, lifeboat, petrol, power or pumping varieties. ``bus garage`` has
+   to be tested before ``park`` can fire, or ``Westbourne Park Bus Garage``
+   comes back as a park.
+2. **Generic transport.** Bare ``station``, ``dlr``, ``underground``, ``tube``.
+3. **The historic keyword list**, now word-bounded. Substring matching filed
+   ``Uxbridge Road`` as a bridge and ``Fenchurch Street`` as a church.
+4. **Hospitality leaves.** Word boundaries are load-bearing: substring ``bar``
+   matches Barbican, Barnes and Barking.
+5. **The street-suffix fallback**, deliberately untouched. Widening it would
+   move roughly 2,000 rows and drown any diff it travelled in.
 """
 
 from __future__ import annotations
 
 import re
 
-_CATEGORY_KEYWORDS = [
-    ("station", "station"),
-    ("theatre", "theatre"),
-    ("cinema", "cinema"),
-    ("hotel", "hotel"),
-    ("museum", "museum"),
-    ("gallery", "gallery"),
-    ("hospital", "hospital"),
-    ("library", "library"),
-    ("church", "church"),
-    ("park", "park"),
-    ("square", "square"),
-    ("bridge", "bridge"),
-    ("restaurant", "restaurant"),
-    ("school", "school"),
-    ("college", "college"),
-    ("university", "university"),
+# Every category ``infer_category`` can return. The promotion gate validates
+# emitted records against this set, so adding a rule means adding its leaf here.
+CATEGORIES = frozenset({
+    # generic
+    "point", "street",
+    # transport
+    "station", "bus_station", "coach_station", "bus_garage",
+    # emergency and utility "stations", which are not transport at all
+    "fire_station", "police_station", "ambulance_station", "lifeboat_station",
+    "fuel",
+    # hospitality
+    "hotel", "restaurant", "pub", "bar", "cafe", "club", "hostel",
+    # everything else the Points List names
+    "theatre", "cinema", "museum", "gallery", "hospital", "library", "church",
+    "park", "square", "bridge", "school", "college", "university",
+})
+
+# "Art'otel" is a real brand: the apostrophe is a word boundary, so ``\botel\b``
+# catches it while "Novotel" and "Motel One" are left alone (no boundary before
+# their "otel"). "Aparthotel" is spelled solid and needs the explicit prefix.
+_HOTEL = r"(?:apart)?h?otels?"
+
+# Hospitality nouns, most specific first. The order decides ties: "Fire Station
+# SE1 (Restaurant / Bar)" is filed as a restaurant, not a bar.
+_HOSPITALITY_LEAVES = [
+    ("restaurant", r"restaurants?"),
+    ("hotel", _HOTEL),
+    ("bar", r"bars?"),
+    ("cafe", r"caf[eé]s?"),
+    ("pub", r"pubs?|ph"),
+    ("club", r"clubs?"),
+    ("hostel", r"hostels?"),
 ]
+
+# What makes a name look like transport, for the hospitality-outranks-transport
+# test in level 0.
+_TRANSPORT_TOKEN = r"stations?|dlr|underground|tube|overground|bus\s+garages?"
+
+# "Station" qualified into a street name. Level 5 would eventually call these
+# streets anyway, but only after "station" had already claimed them.
+_STATION_AS_STREET = (
+    r"\bstation\s+(?:road|approach|parade|street|hill|lane|way|crescent|terrace)\b"
+)
+
+# ``X station`` compounds that are not transport. Ordered pairs so the promotion
+# gate can rebuild the same alternation for its regression check.
+NON_TRANSPORT_STATIONS = [
+    (r"fire", "fire_station"),
+    (r"police", "police_station"),
+    (r"ambulance", "ambulance_station"),
+    (r"lifeboat", "lifeboat_station"),
+    (r"petrol|filling|service", "fuel"),
+    (r"power|pumping", "point"),
+]
+
+# A power station that is also a real tube station ("Battersea Power Station
+# Underground Station") must not be caught by the power-station exclusion.
+_TRANSPORT_QUALIFIER = r"underground|tube|dlr|overground|rail|railway"
+
+# The original substring list, minus "station" (now handled above), in its
+# original order, with word boundaries and plurals.
+_KEYWORDS = [
+    (r"theatres?", "theatre"),
+    (r"cinemas?", "cinema"),
+    (_HOTEL, "hotel"),
+    (r"museums?", "museum"),
+    (r"galler(?:y|ies)", "gallery"),
+    (r"hospitals?", "hospital"),
+    (r"librar(?:y|ies)", "library"),
+    (r"church(?:es)?", "church"),
+    (r"parks?", "park"),
+    (r"squares?", "square"),
+    (r"bridges?", "bridge"),
+    (r"restaurants?", "restaurant"),
+    (r"schools?", "school"),
+    (r"colleges?", "college"),
+    (r"universit(?:y|ies)", "university"),
+]
+
+# Unchanged from the original implementation. See the module docstring.
+_STREET_SUFFIXES = r"\b(road|street|lane|avenue|villas|gardens|place|way|walk|hill)\b"
+
+
+def _build_rules() -> list[tuple[re.Pattern[str], str]]:
+    rules: list[tuple[str, str]] = []
+
+    # Level 0: exclusions.
+    rules.append((_STATION_AS_STREET, "street"))
+    for leaf, pattern in _HOSPITALITY_LEAVES:
+        rules.append((
+            rf"(?=.*\b(?:{_TRANSPORT_TOKEN})\b)(?=.*\b(?:{pattern})\b)", leaf,
+        ))
+
+    # Level 1: specific compounds, before any generic noun can claim them.
+    for prefix, leaf in NON_TRANSPORT_STATIONS:
+        if leaf == "point":  # power / pumping: yield to a genuine transport name
+            rules.append((
+                rf"\b(?:{prefix})\s+stations?\b(?!.*\b(?:{_TRANSPORT_QUALIFIER})\b)",
+                leaf,
+            ))
+        else:
+            rules.append((rf"\b(?:{prefix})\s+stations?\b", leaf))
+    rules += [
+        (r"\bbus\s+garages?\b", "bus_garage"),
+        (r"\bbus\s+stations?\b", "bus_station"),
+        (r"\bcoach\s+stations?\b", "coach_station"),
+    ]
+
+    # Level 2: generic transport.
+    rules += [
+        (r"\bstations?\b", "station"),
+        (r"\bdlr\b", "station"),
+        (r"\bunderground\b", "station"),
+        (r"\btube\b", "station"),
+    ]
+
+    # Level 3: the historic keyword list. ``PH`` keeps its place ahead of it,
+    # so "Canal Cafe Theatre at The Bridge House PH" is still a pub.
+    rules.append((r"\bph\b", "pub"))
+    rules += [(rf"\b{pattern}\b", leaf) for pattern, leaf in _KEYWORDS]
+
+    # Level 4: hospitality leaves.
+    rules += [
+        (r"\bbars?\b", "bar"),
+        (r"\bclubs?\b", "club"),
+        (r"\bcaf[eé]s?\b", "cafe"),
+        (r"\bhostels?\b", "hostel"),
+    ]
+
+    # Level 5: the street-suffix fallback, unchanged.
+    rules.append((_STREET_SUFFIXES, "street"))
+
+    return [(re.compile(pattern), leaf) for pattern, leaf in rules]
+
+
+_RULES = _build_rules()
 
 
 def infer_category(name: str) -> str:
     """Return the category for a Points List entry name."""
     low = name.lower()
-    if re.search(r"\bph\b", low) or low.endswith(" ph") or " ph " in low:
-        return "pub"
-    for keyword, category in _CATEGORY_KEYWORDS:
-        if keyword in low:
+    for rule, category in _RULES:
+        if rule.search(low):
             return category
-    if re.search(r"\b(road|street|lane|avenue|villas|gardens|place|way|walk|hill)\b", low):
-        return "street"
     return "point"
 
 
