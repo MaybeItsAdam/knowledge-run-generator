@@ -1,0 +1,398 @@
+{
+  "_comment": "Pinned output of knowledge_run_generator.poi_categories.infer_category. Entries carrying a `note` record an answer that is known to be wrong; they are here so the commit that fixes them shows the change explicitly.",
+  "entries": [
+    {
+      "name": "Angel Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Waterloo Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Barnes Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Barbican Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Barnes Bridge Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Bethnal Green Underground Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Brixton Tube Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Abbey Road DLR Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Battersea Power Station Underground Station",
+      "expected_category": "station"
+    },
+    {
+      "name": "Bow Church DLR",
+      "expected_category": "church",
+      "note": "known bug, fixed in the next commit: a DLR station, not a church"
+    },
+    {
+      "name": "Langdon Park DLR",
+      "expected_category": "park",
+      "note": "known bug, fixed in the next commit: a DLR station, not a park"
+    },
+    {
+      "name": "All Saints DLR",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: a DLR station, not an unclassified point"
+    },
+    {
+      "name": "Stratford High Street DLR",
+      "expected_category": "street",
+      "note": "known bug, fixed in the next commit: a DLR station, not a street"
+    },
+    {
+      "name": "Victoria Coach Station Arrivals + Taxi Rank",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a coach station, not a rail station"
+    },
+    {
+      "name": "Golders Green Bus Station",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a bus station, not a rail station"
+    },
+    {
+      "name": "Willesden Bus Garage",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: a bus garage, not an unclassified point"
+    },
+    {
+      "name": "Westbourne Park Bus Garage",
+      "expected_category": "park",
+      "note": "known bug, fixed in the next commit: ordering, `park` is tested before any bus rule"
+    },
+    {
+      "name": "Aldgate Bus Garage",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: a bus garage, not an unclassified point"
+    },
+    {
+      "name": "Holloway Fire Station",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a fire station is not a transport station"
+    },
+    {
+      "name": "Stoke Newington Police Station",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a police station is not a transport station"
+    },
+    {
+      "name": "British Transport Police Station E15",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a police station is not a transport station"
+    },
+    {
+      "name": "Islington Ambulance Station",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: an ambulance station is not a transport station"
+    },
+    {
+      "name": "RNLI Tower Lifeboat Station",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a lifeboat station is not a transport station"
+    },
+    {
+      "name": "Chiswick Pier + Lifeboat Station RNLI",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a lifeboat station is not a transport station"
+    },
+    {
+      "name": "Shell Petrol Station N10",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a petrol station is not a transport station"
+    },
+    {
+      "name": "BP Petrol Station Vauxhall Bridge Road",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a petrol station is not a transport station"
+    },
+    {
+      "name": "Battersea Power Station",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a power station is not a transport station"
+    },
+    {
+      "name": "Battersea Power Station Pier",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a power station is not a transport station"
+    },
+    {
+      "name": "Old Millwall Fire Station Restaurant",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a restaurant, and not a station of any kind"
+    },
+    {
+      "name": "Fire Station SE1 (Restaurant / Bar)",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: the trailing parenthetical is authoritative"
+    },
+    {
+      "name": "No 197 Chiswick Fire Station Bar",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a bar, and not a station of any kind"
+    },
+    {
+      "name": "Art'otel London Battersea Power Station",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a hotel, and not a station of any kind"
+    },
+    {
+      "name": "Premier Inn London Southwark - Southwark Station Hotel",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: a hotel, not a station"
+    },
+    {
+      "name": "Stationers Hall",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: `station` matched inside `Stationers`"
+    },
+    {
+      "name": "Camberwell Station Road",
+      "expected_category": "station",
+      "note": "known bug, fixed in the next commit: `Station Road` is a street name, not a station"
+    },
+    {
+      "name": "Uxbridge Road",
+      "expected_category": "bridge",
+      "note": "known bug, fixed in the next commit: `bridge` matched inside `Uxbridge`"
+    },
+    {
+      "name": "Cambridge Heath Road",
+      "expected_category": "bridge",
+      "note": "known bug, fixed in the next commit: `bridge` matched inside `Cambridge`"
+    },
+    {
+      "name": "Knightsbridge Green",
+      "expected_category": "bridge",
+      "note": "known bug, fixed in the next commit: `bridge` matched inside `Knightsbridge`"
+    },
+    {
+      "name": "Oxford & Cambridge Club",
+      "expected_category": "bridge",
+      "note": "known bug, fixed in the next commit: `bridge` matched inside `Cambridge`"
+    },
+    {
+      "name": "Pembridge Hall School",
+      "expected_category": "bridge",
+      "note": "known bug, fixed in the next commit: `bridge` matched inside `Pembridge`"
+    },
+    {
+      "name": "Fenchurch Street",
+      "expected_category": "church",
+      "note": "known bug, fixed in the next commit: `church` matched inside `Fenchurch`"
+    },
+    {
+      "name": "Christchurch Road",
+      "expected_category": "church",
+      "note": "known bug, fixed in the next commit: `church` matched inside `Christchurch`"
+    },
+    {
+      "name": "Churchill War Rooms",
+      "expected_category": "church",
+      "note": "known bug, fixed in the next commit: `church` matched inside `Churchill`"
+    },
+    {
+      "name": "Parker Street",
+      "expected_category": "park",
+      "note": "known bug, fixed in the next commit: `park` matched inside `Parker`"
+    },
+    {
+      "name": "Citadines Barbican Aparthotel",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Royal National ENT and Eastman Dental Hospitals",
+      "expected_category": "hospital"
+    },
+    {
+      "name": "Millenium & Copthorne Hotels at Chelsea Football Club",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "45 Park Lane Hotel (+ CUT at 45 Park Lane Restaurant)",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Virgin Hotels London Shoreditch",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Institute of Contemporary Arts ICA Galleries",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: the plural `Galleries` is not matched"
+    },
+    {
+      "name": "Art'otel London Hoxton",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: a hotel spelled without the leading `h`"
+    },
+    {
+      "name": "100 Club",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: no `club` leaf yet"
+    },
+    {
+      "name": "Barnes Rugby Football Club",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: no `club` leaf yet"
+    },
+    {
+      "name": "Alchemist Bar EC3",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: no `bar` leaf yet"
+    },
+    {
+      "name": "Bar Italia – Coffee Shop",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: no `bar` leaf yet"
+    },
+    {
+      "name": "Café Med",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: no `cafe` leaf yet"
+    },
+    {
+      "name": "YHA Central Hostel",
+      "expected_category": "point",
+      "note": "known bug, fixed in the next commit: no `hostel` leaf yet"
+    },
+    {
+      "name": "Old Queen Street Cafe",
+      "expected_category": "street",
+      "note": "known bug, fixed in the next commit: no `cafe` leaf yet"
+    },
+    {
+      "name": "Barbican Cinema Cafe & Bar",
+      "expected_category": "cinema"
+    },
+    {
+      "name": "Canal Cafe Theatre at The Bridge House PH",
+      "expected_category": "pub"
+    },
+    {
+      "name": "Village Underground",
+      "expected_category": "point"
+    },
+    {
+      "name": "The Gore London - Starhotels Collezione",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "Andaz Hotel",
+      "expected_category": "hotel"
+    },
+    {
+      "name": "A Toca Restaurant",
+      "expected_category": "restaurant"
+    },
+    {
+      "name": "George Inn PH",
+      "expected_category": "pub"
+    },
+    {
+      "name": "Aldermanbury Square",
+      "expected_category": "square"
+    },
+    {
+      "name": "Aberdeen Park",
+      "expected_category": "park"
+    },
+    {
+      "name": "Adelphi Theatre",
+      "expected_category": "theatre"
+    },
+    {
+      "name": "All Souls Church",
+      "expected_category": "church"
+    },
+    {
+      "name": "Balham Library",
+      "expected_category": "library"
+    },
+    {
+      "name": "Albert Bridge",
+      "expected_category": "bridge"
+    },
+    {
+      "name": "Bluecoat School",
+      "expected_category": "school"
+    },
+    {
+      "name": "Cromwell Hospital",
+      "expected_category": "hospital"
+    },
+    {
+      "name": "Bacons College",
+      "expected_category": "college"
+    },
+    {
+      "name": "British Museum",
+      "expected_category": "museum"
+    },
+    {
+      "name": "BFI IMAX Cinema SE1",
+      "expected_category": "cinema"
+    },
+    {
+      "name": "Bankside Gallery",
+      "expected_category": "gallery"
+    },
+    {
+      "name": "City University",
+      "expected_category": "university"
+    },
+    {
+      "name": "Abbeville Road",
+      "expected_category": "street"
+    },
+    {
+      "name": "02 Arena",
+      "expected_category": "point"
+    }
+  ],
+  "distribution": {
+    "_comment": "Category histogram over every name the extractor pulls out of the committed Points List PDF. Held to a tolerance, not to the digit: the point is that a rule edit cannot silently move hundreds of rows.",
+    "source": "knowledge-of-london-points-list.pdf",
+    "total": 6166,
+    "total_tolerance_fraction": 0.01,
+    "tolerance_fraction": 0.03,
+    "tolerance_floor": 5,
+    "counts": {
+      "point": 2303,
+      "street": 1651,
+      "hotel": 356,
+      "station": 349,
+      "restaurant": 237,
+      "pub": 219,
+      "square": 193,
+      "park": 181,
+      "theatre": 117,
+      "church": 93,
+      "school": 87,
+      "library": 78,
+      "bridge": 72,
+      "hospital": 58,
+      "college": 50,
+      "museum": 50,
+      "cinema": 29,
+      "gallery": 28,
+      "university": 15
+    }
+  }
+}
