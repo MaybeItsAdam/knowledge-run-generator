@@ -67,6 +67,28 @@ CATEGORIES = frozenset({
     "park", "square", "bridge", "school", "college", "university",
 })
 
+# The closed vocabulary for a POI's ``transport_modes`` field.
+#
+# NOT YET POPULATED. Every emitted record carries ``transport_modes: []`` and
+# ``transport_modes_source: null``; nothing fills them in. The Points List names
+# a station without saying which lines serve it, and the only source that could
+# is a fresh OSM harvest, which moves the tier-3 gazetteer for all 320 runs and
+# is therefore deliberately out of scope. The vocabulary is fixed now so that
+# whatever eventually populates the field has nothing to invent.
+TRANSPORT_MODES = (
+    "underground",
+    "overground",
+    "rail",
+    "dlr",
+    "elizabeth",
+    "tram",
+    "bus",
+    "coach",
+    "river",
+    "cable_car",
+    "air",
+)
+
 # "Art'otel" is a real brand: the apostrophe is a word boundary, so ``\botel\b``
 # catches it while "Novotel" and "Motel One" are left alone (no boundary before
 # their "otel"). "Aparthotel" is spelled solid and needs the explicit prefix.
@@ -109,6 +131,32 @@ NON_TRANSPORT_STATIONS = [
 # Underground Station") must not be caught by the power-station exclusion.
 _TRANSPORT_QUALIFIER = r"underground|tube|dlr|overground|rail|railway"
 
+
+def _non_transport_station_pattern(prefix: str, leaf: str) -> str:
+    """The level-1 pattern for one ``X station`` compound."""
+    if leaf == "point":  # power / pumping: yield to a genuine transport name
+        return rf"\b(?:{prefix})\s+stations?\b(?!.*\b(?:{_TRANSPORT_QUALIFIER})\b)"
+    return rf"\b(?:{prefix})\s+stations?\b"
+
+
+_NON_TRANSPORT_STATION_RES = [
+    re.compile(_non_transport_station_pattern(prefix, leaf))
+    for prefix, leaf in NON_TRANSPORT_STATIONS
+]
+
+
+def is_non_transport_station_name(name: str) -> bool:
+    """True if the name is an ``X station`` that is not a transport station.
+
+    Independent of ``infer_category`` on purpose. The promotion gate uses this
+    to check *data*, which may have been produced by an older build, so asking
+    the classifier again would only tell us that the classifier agrees with
+    itself. It shares the rules' patterns, including the carve-out that lets
+    "Battersea Power Station Underground Station" stay a station.
+    """
+    low = name.lower()
+    return any(rule.search(low) for rule in _NON_TRANSPORT_STATION_RES)
+
 # The original substring list, minus "station" (now handled above), in its
 # original order, with word boundaries and plurals.
 _KEYWORDS = [
@@ -145,13 +193,7 @@ def _build_rules() -> list[tuple[re.Pattern[str], str]]:
 
     # Level 1: specific compounds, before any generic noun can claim them.
     for prefix, leaf in NON_TRANSPORT_STATIONS:
-        if leaf == "point":  # power / pumping: yield to a genuine transport name
-            rules.append((
-                rf"\b(?:{prefix})\s+stations?\b(?!.*\b(?:{_TRANSPORT_QUALIFIER})\b)",
-                leaf,
-            ))
-        else:
-            rules.append((rf"\b(?:{prefix})\s+stations?\b", leaf))
+        rules.append((_non_transport_station_pattern(prefix, leaf), leaf))
     rules += [
         (r"\bbus\s+garages?\b", "bus_garage"),
         (r"\bbus\s+stations?\b", "bus_station"),

@@ -20,7 +20,12 @@ import unittest
 from collections import Counter
 from pathlib import Path
 
-from knowledge_run_generator.poi_categories import infer_category
+from knowledge_run_generator.poi_categories import (
+    CATEGORIES,
+    TRANSPORT_MODES,
+    infer_category,
+    is_non_transport_station_name,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GOLDEN_PATH = REPO_ROOT / "tests" / "golden" / "poi_categories.json"
@@ -121,6 +126,52 @@ class DistributionTests(unittest.TestCase):
             "category distribution moved beyond tolerance:\n" + "\n".join(drifted),
         )
 
+
+class TaxonomyContractTests(unittest.TestCase):
+    """What the promotion gate and the app are allowed to assume."""
+
+    def test_every_rule_lands_on_a_declared_category(self):
+        from knowledge_run_generator.poi_categories import _RULES
+
+        self.assertEqual({leaf for _, leaf in _RULES} - CATEGORIES, set())
+
+    def test_the_golden_file_only_uses_declared_categories(self):
+        used = {e["expected_category"] for e in _golden()["entries"]}
+        self.assertEqual(used - CATEGORIES, set())
+
+    def test_transport_modes_is_a_closed_vocabulary(self):
+        self.assertEqual(len(set(TRANSPORT_MODES)), len(TRANSPORT_MODES))
+        self.assertEqual(
+            set(TRANSPORT_MODES),
+            {"underground", "overground", "rail", "dlr", "elizabeth", "tram",
+             "bus", "coach", "river", "cable_car", "air"},
+        )
+
+
+class NonTransportStationTests(unittest.TestCase):
+    """The predicate the promotion gate uses to catch the reported bug."""
+
+    def test_emergency_and_fuel_stations_are_flagged(self):
+        for name in ("Holloway Fire Station", "Stoke Newington Police Station",
+                     "Islington Ambulance Station", "RNLI Tower Lifeboat Station",
+                     "Shell Petrol Station N10", "Battersea Power Station"):
+            self.assertTrue(is_non_transport_station_name(name), name)
+
+    def test_real_stations_are_not_flagged(self):
+        for name in ("Angel Station", "Waterloo Station", "Stationers Hall",
+                     "Camberwell Station Road",
+                     "Battersea Power Station Underground Station"):
+            self.assertFalse(is_non_transport_station_name(name), name)
+
+    def test_nothing_in_the_points_list_is_both_a_station_and_flagged(self):
+        """The regression gate, run against the source rather than a build."""
+        try:
+            names = _points_list_names()
+        except ImportError as exc:  # pdfplumber absent
+            raise unittest.SkipTest(f"cannot parse the Points List PDF: {exc}")
+        leaked = [n for n in names
+                  if infer_category(n) == "station" and is_non_transport_station_name(n)]
+        self.assertEqual(leaked, [])
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,7 +18,13 @@ Layout facts (confirmed against Edition 4 geometry, A4 595x842pt):
     wraps onto a second line sits only ~13pt below its first line.
 
 Outputs constants/extracted_pois.json: a list of
-  {name, postal_district, region, category, kind, source_page}.
+  {name, postal_district, region, category, kind, source_page,
+   transport_modes, transport_modes_source}.
+
+``transport_modes`` is always present and always a list, and is always empty
+here: the Points List names a station without saying which lines serve it, and
+the OSM harvest that would fill it in is out of scope. See
+``knowledge_run_generator.poi_categories.TRANSPORT_MODES``.
 """
 
 from __future__ import annotations
@@ -153,6 +159,8 @@ def extract(pdf_path: Path, limit: int | None = None):
                     "category": _infer_category(name),
                     "kind": mode,
                     "source_page": section_page,
+                    "transport_modes": [],
+                    "transport_modes_source": None,
                 }
             )
         section_body = []
@@ -252,6 +260,8 @@ def _handle_curiosity_line(records, line, region, page_no):
             "category": _infer_category(name),
             "kind": "curiosity",
             "source_page": page_no,
+            "transport_modes": [],
+            "transport_modes_source": None,
         }
     )
 
