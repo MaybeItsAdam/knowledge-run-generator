@@ -605,6 +605,25 @@ class Gazetteer:
                     self._resolve_cache[cache_key] = street_entry
                     return street_entry
 
+        # The same fallback when the record *claims* the right district but
+        # its coordinate is implausible for it: a fresh Points List geocode
+        # put "WARWICK GARDENS W14" in Battersea, 4.5 km from W14, while its
+        # postal_district still read W14. Only machine tiers (Points List,
+        # OSM) are second-guessed; a curated override means what it says.
+        if (record.get("_source") != "override" and not on_street
+                and self.alias_index is not None):
+            stem, postcode = _split_postcode(self._follow_aliases(address))
+            postcode = postcode or _split_postcode(address)[1]
+            plausibility = self.district_model.check(postcode, lat, lon)
+            norm = _normalise_name(stem)
+            if (plausibility is not None and plausibility["status"] == "fail"
+                    and (norm in self.alias_index.canonical_to_nodes
+                         or norm in self.alias_index.alias_to_canonical)):
+                street_entry = self._resolve_street(address, G)
+                if street_entry is not None:
+                    self._resolve_cache[cache_key] = street_entry
+                    return street_entry
+
         # Street-name endpoints hijacked by a point tier: "YORK WAY N1" hits
         # the Points List's rooftop geocode before the street tier ever runs,
         # and the rooftop snaps 50m+ from the kerb. When the snap is that bad

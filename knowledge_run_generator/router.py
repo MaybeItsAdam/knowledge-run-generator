@@ -602,6 +602,13 @@ def constraint_waypoints(G, route_nodes, constraints):
     waypoints = []
     idx = 0
     C = list(constraints)
+    # Leading junctions the route starts on are satisfied at the origin, as
+    # in get_ordered_route. Without this the walk waits for an arrival at the
+    # junction that never comes, and every later constraint goes unplaced.
+    if route_nodes:
+        while idx < len(C) and C[idx].kind != "STREET" and route_nodes[0] in C[idx].key:
+            waypoints.append(route_nodes[0])
+            idx += 1
     for i in range(1, len(route_nodes)):
         if idx >= len(C):
             break
