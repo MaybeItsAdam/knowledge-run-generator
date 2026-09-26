@@ -544,21 +544,37 @@ def check_constraint_order(G, route_nodes, constraints, min_coverage=1.0):
             "first_gap": None,
         }
 
-    edge_names = _route_edge_names(G, route_nodes)
+    # Position 0 is the origin itself. The router counts leading junctions
+    # that contain the origin as already satisfied (``get_ordered_route``'s
+    # ``start_idx``); scoring only *arrivals* made the validator demand the
+    # route come back to a junction it started on, and fail it when it didn't.
+    # Only that leading run of NODE constraints may match there: no edge has
+    # been driven, and a later junction is not satisfied by having started on
+    # it. Positions 1..m are the route's edges, matched on the node they
+    # arrive at.
+    edge_names = [frozenset()] + list(_route_edge_names(G, route_nodes))
+    origin_prefix = 0
+    if route_nodes:
+        while (origin_prefix < len(C) and C[origin_prefix].kind != "STREET"
+               and route_nodes[0] in C[origin_prefix].key):
+            origin_prefix += 1
 
-    def matches(constraint, j):
+    def matches(i, j):
+        if j == 0:
+            return i < origin_prefix
+        constraint = C[i]
         if constraint.kind == "STREET":
             return constraint.key in edge_names[j]
-        return route_nodes[j + 1] in constraint.key
+        return route_nodes[j] in constraint.key
 
     m = len(edge_names)
 
-    # LCS over (constraints × edges), membership-matched.
+    # LCS over (constraints × positions), membership-matched.
     prev = [0] * (m + 1)
-    for c in C:
+    for i in range(len(C)):
         cur = [0] * (m + 1)
         for j in range(1, m + 1):
-            if matches(c, j - 1):
+            if matches(i, j - 1):
                 cur[j] = prev[j - 1] + 1
             else:
                 cur[j] = max(prev[j], cur[j - 1])
@@ -568,14 +584,14 @@ def check_constraint_order(G, route_nodes, constraints, min_coverage=1.0):
     # Greedy walk for the strict metric and the stall point.
     idx = 0
     for j in range(m):
-        while idx < len(C) and matches(C[idx], j):
+        while idx < len(C) and matches(idx, j):
             idx += 1
         if idx >= len(C):
             break
 
     missing = []
-    for c in C:
-        if not any(matches(c, j) for j in range(m)):
+    for i, c in enumerate(C):
+        if not any(matches(i, j) for j in range(m)):
             missing.append(c.raw)
 
     coverage = matched / len(C)

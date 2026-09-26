@@ -128,6 +128,52 @@ class StreetFallbackTests(unittest.TestCase):
         gz = Gazetteer(alias_index=self.alias_index)
         self.assertIsNone(gz.resolve("NOWHERE AT ALL W1", self.G))
 
+    def _n1_points(self, **extra):
+        # Thirty N1 points around the northern High Street give N1 a modelled
+        # centre and a p95 radius that one stray point cannot stretch.
+        pois = {
+            f"N1 POINT {i}": {"coordinates": [-0.100 + (i % 6) * 0.0005, 51.540],
+                              "postal_district": "N1"}
+            for i in range(30)
+        }
+        pois.update(extra)
+        return pois
+
+    def test_implausible_geocode_for_its_own_district_falls_to_street(self):
+        # The record says N1 but was geocoded ~7 km south, onto the other High
+        # Street. The street tier, which picks by district, is the better
+        # answer (the WARWICK GARDENS W14 drift that failed run 311).
+        gz = Gazetteer(
+            alias_index=self.alias_index,
+            knowledge_pois=self._n1_points(**{
+                "HIGH STREET N1": {"coordinates": [-0.070, 51.480],
+                                   "postal_district": "N1"},
+            }),
+        )
+        entry = gz.resolve("HIGH STREET N1", self.G)
+        self.assertEqual(entry.source, "street")
+        self.assertIn(entry.snapped_node, range(100, 104))
+
+    def test_plausible_geocode_is_kept(self):
+        gz = Gazetteer(
+            alias_index=self.alias_index,
+            knowledge_pois=self._n1_points(**{
+                "HIGH STREET N1": {"coordinates": [-0.1005, 51.540],
+                                   "postal_district": "N1"},
+            }),
+        )
+        self.assertEqual(gz.resolve("HIGH STREET N1", self.G).source, "knowledge_poi")
+
+    def test_curated_override_is_never_second_guessed(self):
+        gz = Gazetteer(
+            overrides={"HIGH STREET N1": [51.480, -0.070]},
+            alias_index=self.alias_index,
+            knowledge_pois=self._n1_points(),
+        )
+        entry = gz.resolve("HIGH STREET N1", self.G)
+        self.assertEqual(entry.source, "override")
+        self.assertIn(entry.snapped_node, range(200, 204))
+
 
 class StationMatchingTests(unittest.TestCase):
     """OSM names stations without the word "Station"; the Blue Book always

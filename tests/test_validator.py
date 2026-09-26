@@ -21,7 +21,10 @@ from knowledge_run_generator.regression import (
     fingerprint_run,
     hash_nodes,
 )
+from knowledge_run_generator.aliases import normalise
+from knowledge_run_generator.constraints import Constraint
 from knowledge_run_generator.validator import (
+    check_constraint_order,
     check_street_coverage,
     check_street_order,
     check_turn_legality,
@@ -184,6 +187,68 @@ class StreetOrderTests(unittest.TestCase):
         self.assertTrue(
             check_street_order(G, [0, 1, 2], expected, min_coverage=0.6)[0]
         )
+
+
+class ConstraintOrderTests(unittest.TestCase):
+    @staticmethod
+    def _street(name):
+        return Constraint("STREET", normalise(name), name, "exact", True)
+
+    @staticmethod
+    def _junction(nodes, raw="JUNCTION"):
+        return Constraint("NODE", frozenset(nodes), raw, "junction", True)
+
+    def test_leading_junction_containing_the_origin_is_satisfied(self):
+        # Run 71: the start snaps onto the Lillie Bridge junction node. The
+        # router counts that as satisfied at the origin; the validator must
+        # agree rather than demand an arrival back at the start.
+        G = _linear_graph(["Old Brompton Road", "Eardley Crescent"])
+        constraints = [
+            self._junction({0}, "LILLIE BRIDGE"),
+            self._street("Old Brompton Road"),
+            self._street("Eardley Crescent"),
+        ]
+        ok, m = check_constraint_order(G, [0, 1, 2], constraints)
+        self.assertTrue(ok)
+        self.assertEqual(m["ordered_coverage"], 1.0)
+        self.assertEqual(m["strict_ordered"], 1.0)
+
+    def test_junction_arrived_at_still_matches(self):
+        G = _linear_graph(["Old Brompton Road", "Eardley Crescent", "Warwick Road"])
+        constraints = [
+            self._street("Old Brompton Road"),
+            self._junction({2}),
+            self._street("Warwick Road"),
+        ]
+        ok, m = check_constraint_order(G, [0, 1, 2, 3], constraints)
+        self.assertTrue(ok)
+        self.assertEqual(m["matched"], 3)
+
+    def test_origin_does_not_satisfy_a_street(self):
+        # Standing at the start drives no edge: a leading STREET still has to
+        # be traversed, so a route that never uses it stays short.
+        G = _linear_graph(["Old Brompton Road", "Eardley Crescent"])
+        constraints = [self._street("Lillie Road"), self._street("Eardley Crescent")]
+        ok, m = check_constraint_order(G, [0, 1, 2], constraints)
+        self.assertFalse(ok)
+        self.assertEqual(m["matched"], 1)
+
+    def test_later_junction_is_not_satisfied_by_the_origin(self):
+        # Only the leading junctions count at the start; a junction further
+        # down the sequence has to be reached in its turn.
+        G = _linear_graph(["Old Brompton Road", "Eardley Crescent"])
+        constraints = [self._street("Old Brompton Road"), self._junction({0})]
+        ok, m = check_constraint_order(G, [0, 1, 2], constraints)
+        self.assertFalse(ok)
+        self.assertEqual(m["matched"], 1)
+        self.assertEqual(m["missing"], ["JUNCTION"])
+
+    def test_junction_away_from_the_route_is_missed(self):
+        G = _linear_graph(["Old Brompton Road", "Eardley Crescent"])
+        constraints = [self._junction({99}), self._street("Eardley Crescent")]
+        ok, m = check_constraint_order(G, [0, 1, 2], constraints)
+        self.assertFalse(ok)
+        self.assertEqual(m["ordered_coverage"], 0.5)
 
 
 class TurnLegalityTests(unittest.TestCase):

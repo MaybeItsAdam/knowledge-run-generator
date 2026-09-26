@@ -177,6 +177,23 @@ class ConstraintWaypointTests(unittest.TestCase):
         self.assertEqual(len(wps), 2)
         self.assertLess(route.index(wps[0]), route.index(wps[1]) + 1)
 
+    def test_leading_junction_at_the_origin_is_placed_there(self):
+        # Run 71: West Brompton snaps onto the Lillie Bridge junction node, so
+        # the router satisfies that constraint by standing still. The walk
+        # must too, or it waits for an arrival and places nothing after it.
+        G = _grid()
+        index = _street_index(G)
+        constraints = [
+            Constraint("NODE", frozenset({1}), "START JUNCTION", "junction", True),
+            street("Alpha Road"),
+        ]
+        route, meta = route_ordered_with_ladder(
+            G, 1, 5, constraints, street_to_nodes=index)
+        self.assertEqual(meta["routing_mode"], "ordered_strict")
+        wps = constraint_waypoints(G, route, constraints)
+        self.assertEqual(len(wps), 2)
+        self.assertEqual(wps[0], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
