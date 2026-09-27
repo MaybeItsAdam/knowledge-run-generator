@@ -121,11 +121,15 @@ reported but non-gating; why both ordered metrics are tracked).
   against the sequence they no longer follow). 0 legality failures, 0
   sanity failures, 0 taxi-legality failures, either direction. Routing
   mode: 293 `ordered_strict` / 1 `ordered_relaxed` / 26 `crow_flies`.
-- 5 preflight warnings (endpoint snapped > 50 m: runs 24, 90, 121, 124,
-  150) are the taxi graph at work: each endpoint's old snap point is on a
-  way now closed or access-only (Albert Bridge is `access=no` in OSM since
-  2026, Station Approach SW12 is `motor_vehicle=destination`, a gate at
-  Manor Fields), so the cab sets down at the nearest taxi-legal point.
+- 3 preflight warnings (endpoint snapped > 50 m: runs 24, 121, 124) are
+  the taxi graph at work: each endpoint's old snap point is on a way now
+  closed (Albert Bridge is `access=no` in OSM since 2026, a gate at Manor
+  Fields), so the cab sets down at the nearest taxi-legal point.
+- Every value of a merged edge's `name` list is a street in the alias
+  index. osmnx builds that list from a set, so its order changes between
+  graph builds; taking the first as the street and the rest as aliases
+  moved street-tier endpoints on a rebuild (run 51's Southwark Bridge EC4
+  resolved to Southwark Bridge Road SE1).
   `promote_to_app.py --min-passed` counts Blue Book passes only.
 - Step text is not a fidelity metric. `ordered_coverage` / `strict_ordered` are
   computed from the graph edges the route traverses (`_route_edge_names`), not

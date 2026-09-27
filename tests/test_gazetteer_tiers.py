@@ -424,3 +424,29 @@ class IndexCacheTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MergedEdgeNameTests(unittest.TestCase):
+    """osmnx merges the names of simplified ways into a list whose order is
+    not stable between builds. Every name on the list is a street."""
+
+    def _graph(self, names):
+        G = nx.MultiDiGraph()
+        G.add_node(1, x=-0.0946, y=51.5079)
+        G.add_node(2, x=-0.0961, y=51.5030)
+        G.add_edge(1, 2, name=names, length=500.0)
+        return G
+
+    def test_every_merged_name_is_canonical_whatever_the_order(self):
+        for names in (["Southwark Bridge", "Southwark Bridge Road"],
+                      ["Southwark Bridge Road", "Southwark Bridge"]):
+            index = build_alias_index(self._graph(names))
+            self.assertIn("SOUTHWARK BRIDGE", index.canonical_to_nodes, names)
+            self.assertIn("SOUTHWARK BRIDGE ROAD", index.canonical_to_nodes, names)
+            self.assertNotIn("SOUTHWARK BRIDGE", index.alias_to_canonical, names)
+
+    def test_ref_is_still_an_alias(self):
+        G = self._graph("Southwark Bridge")
+        G.edges[1, 2, 0]["ref"] = "A300"
+        index = build_alias_index(G)
+        self.assertEqual(index.alias_to_canonical.get("A300"), "SOUTHWARK BRIDGE")
