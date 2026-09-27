@@ -256,6 +256,17 @@ SIX_MILES_M = 9656.0
 # How far past the radius a route may stray before it fails. An endpoint that
 # sits outside the radius raises the allowance to its own distance.
 RADIUS_TOLERANCE_M = 500.0
+# Blue Book runs whose own published route leaves the six-mile radius (by the
+# excess measured on the 2026-09 graph, rounded up). TfL Annex B is the source
+# of truth for the run list, so these runs are legitimate; each gets exactly
+# enough headroom for its route and no more. Any other run still fails at
+# RADIUS_TOLERANCE_M.
+BLUE_BOOK_RADIUS_ALLOWANCE_M = {
+    37: 1000.0,   # 660 m (AB), 894 m (BA) outside
+    68: 1000.0,   # 507 m (AB), 520 m (BA) outside
+    109: 1500.0,  # 1,436 m outside: the run itself crosses Chiswick Bridge
+    189: 1500.0,  # 1,445 m outside
+}
 
 # Gross-detour gate. `is_direct` (ratio 1.8) is triage only — Blue Book runs
 # are legitimately indirect. These catch the absurd: a route several times
@@ -272,7 +283,8 @@ def check_route_sanity(G, route_nodes, origin_node, dest_node, shortest_m=None,
                        straight_ratio=GROSS_STRAIGHT_RATIO,
                        shortest_ratio=GROSS_SHORTEST_RATIO,
                        min_excess_m=GROSS_MIN_EXCESS_M,
-                       radius_tolerance_m=RADIUS_TOLERANCE_M):
+                       radius_tolerance_m=RADIUS_TOLERANCE_M,
+                       radius_allowance_m=0.0):
     """Hard sanity gate for one direction of a run.
 
     Fails when the route
@@ -284,7 +296,8 @@ def check_route_sanity(G, route_nodes, origin_node, dest_node, shortest_m=None,
       ``min_excess_m`` longer, or
     * goes further from Charing Cross than the six-mile radius (or than the
       farther endpoint, when an endpoint is itself outside it) plus
-      ``radius_tolerance_m``.
+      ``radius_tolerance_m``, widened to ``radius_allowance_m`` for the few
+      Blue Book runs listed in ``BLUE_BOOK_RADIUS_ALLOWANCE_M``.
 
     Returns ``(ok, metrics, reasons)``.
     """
@@ -326,7 +339,7 @@ def check_route_sanity(G, route_nodes, origin_node, dest_node, shortest_m=None,
     farthest = max(from_centre(n) for n in route_nodes)
     metrics["max_from_centre_m"] = round(farthest, 1)
     metrics["radius_excess_m"] = round(max(0.0, farthest - SIX_MILES_M), 1)
-    if farthest > allowance + radius_tolerance_m:
+    if farthest > allowance + max(radius_tolerance_m, radius_allowance_m or 0.0):
         reasons.append(f"route reaches {farthest:.0f}m from Charing Cross, "
                        f"{farthest - SIX_MILES_M:.0f}m outside the six-mile radius")
     return not reasons, metrics, reasons
@@ -924,6 +937,7 @@ def validate_route(G, route_nodes, origin_node, dest_node,
     result.is_sane, result.sanity_metrics, result.sanity_reasons = check_route_sanity(
         G, route_nodes, origin_node, dest_node,
         shortest_m=config.get("shortest_m"),
+        radius_allowance_m=config.get("radius_allowance_m") or 0.0,
     )
     hard_gaps = int(config.get("hard_gaps") or 0)
     result.passed = (result.is_legal and result.is_ordered and hard_gaps == 0

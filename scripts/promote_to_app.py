@@ -274,11 +274,14 @@ def promote_one(src: Path, dst: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected", type=int, default=320, help="Expected run count.")
-    # Floor sits just under the current honest pass count (311 under the
-    # ordered gate: legality + full ordered traversal + no hard gaps) so
-    # routine promotions can't regress below it. The residual failures are
-    # explicit OSM-vs-Blue-Book drift (e.g. Hammersmith Bridge closure).
-    parser.add_argument("--min-passed", type=int, default=305,
+    # Floor at the honest pass count under the stricter gates (constraints
+    # pinned to the run, loop repair, the gross-detour and radius sanity gate):
+    # 291 on the 2026-09 graph before the Blue Book radius allowances, which
+    # can only add passes. The earlier 305 floor was set when far-off
+    # same-named streets and 30 km detours still counted as passes. The
+    # residual failures are explicit OSM-vs-Blue-Book drift (Hammersmith
+    # Bridge, LTNs) and orders that can't be driven today without a loop.
+    parser.add_argument("--min-passed", type=int, default=291,
                         help="Minimum QA-passed run count required to promote.")
     # Floors, not exact counts: the row count moves with the Points List
     # edition and with the geocoder's success rate. Current build: 5,746 rows,
