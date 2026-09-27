@@ -1,6 +1,7 @@
 import os
 import math
 import sys
+import time
 import geopandas as gpd
 import networkx as nx
 import osmnx as ox
@@ -87,17 +88,87 @@ def _print_progress(percent: int, stage: str, width: int = 30) -> None:
     print(f"\r[{bar}] {percent:3d}% {stage}", end="", flush=True)
 
 
+DEFAULT_NETWORK_TYPE = "taxi"
+SUPPORTED_NETWORK_TYPES = ("taxi", "drive", "drive_service")
+
+
+def resolve_network_type(network_type=None):
+    """The graph profile to use: argument, then ``KRG_GRAPH_NETWORK_TYPE``,
+    then ``taxi``."""
+    return str(network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE")
+               or DEFAULT_NETWORK_TYPE)
+
+
+def graph_cache_path(network_type=None):
+    resolved = resolve_network_type(network_type)
+    safe = resolved.replace("/", "_").replace(" ", "_")
+    if safe == "taxi":
+        from .taxi_profile import TAXI_GRAPH_VERSION
+        return cache_path(f"london_taxi_v{TAXI_GRAPH_VERSION}.graphml")
+    return cache_path(GRAPH_FILENAME_TEMPLATE.format(network_type=safe))
+
+
+def taxi_rules_path(network_type=None):
+    """Sidecar of the taxi graph: closed ways, destination ways, barriers."""
+    from .taxi_profile import SIDECAR_SUFFIX, TAXI_GRAPH_VERSION
+    return cache_path(f"london_taxi_v{TAXI_GRAPH_VERSION}{SIDECAR_SUFFIX}")
+
+
+# Greater London, for the filtered-street harvest.
+LONDON_BBOX = (51.28, -0.52, 51.70, 0.34)
+
+
+def load_filtered_streets(fetch=True):
+    """Named non-motor road sections (modal filters mapped by re-tagging the
+    road), cached as ``london_filtered_streets.json``. Only used to *explain*
+    a failed Blue Book run; routing never reads it. ``{}`` if unavailable."""
+    import json
+    from .taxi_profile import filtered_streets_query, parse_filtered_streets
+    path = cache_path("london_filtered_streets_v2.json")
+    if path.exists():
+        return json.loads(path.read_text())
+    if not fetch:
+        return {}
+    try:
+        from .osm_pois import fetch_overpass
+        data = fetch_overpass(filtered_streets_query(LONDON_BBOX))
+    except Exception as exc:
+        print(f"  Warning: filtered-street harvest failed ({exc}); "
+              "reasons will not name re-tagged modal filters.")
+        return {}
+    streets = parse_filtered_streets(data.get("elements", []))
+    path.write_text(json.dumps(streets, sort_keys=True))
+    return streets
+
+
+def load_taxi_rules():
+    """The :class:`~.taxi_profile.TaxiRules` of the cached taxi graph, or
+    ``None`` when the taxi graph has not been built yet."""
+    from .taxi_profile import TaxiRules
+    rules = TaxiRules.load(taxi_rules_path())
+    if rules is not None:
+        rules.filtered_streets = load_filtered_streets()
+    return rules
+
+
 def load_graph(place_name="Greater London, UK", network_type=None):
     """
     Load the street network graph for the given place name.
+
+    ``taxi`` (the default) is the taxi-legal profile built by
+    :mod:`knowledge_run_generator.taxi_profile`; ``drive`` and
+    ``drive_service`` are osmnx's stock private-car profiles. Each is cached
+    under its own file.
     """
-    resolved_network_type = network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive")
-    safe_network_type = str(resolved_network_type).replace("/", "_").replace(" ", "_")
-    graph_path = cache_path(GRAPH_FILENAME_TEMPLATE.format(network_type=safe_network_type))
+    resolved_network_type = resolve_network_type(network_type)
+    graph_path = graph_cache_path(resolved_network_type)
 
     if graph_path.exists():
         print(f"Loading graph from cache: {graph_path}")
-        return ox.load_graphml(graph_path)
+        G = ox.load_graphml(graph_path)
+        if resolved_network_type == "taxi":
+            G.graph["krg_profile"] = "taxi"
+        return G
 
     is_tty = sys.stdout.isatty()
     if is_tty:
@@ -106,8 +177,20 @@ def load_graph(place_name="Greater London, UK", network_type=None):
     else:
         print(f"Downloading graph for {place_name} (network_type={resolved_network_type})...")
 
-    # Default to strict drive graph; optionally allow drive_service via env/arg.
-    G = ox.graph_from_place(place_name, network_type=resolved_network_type)
+    started = time.time()
+    if resolved_network_type == "taxi":
+        import json
+        from .taxi_profile import build_taxi_graph
+        G, sidecar = build_taxi_graph(place_name)
+        rules_path = taxi_rules_path()
+        rules_path.write_text(json.dumps(sidecar, indent=1, sort_keys=True))
+        print(f"  taxi rules: {len(sidecar['closed_ways'])} closed ways, "
+              f"{len(sidecar['destination_ways'])} destination-only ways, "
+              f"{len(sidecar['contraflow_ways'])} contraflows, "
+              f"{len(sidecar['barriers'])} blocking barriers -> {rules_path}")
+    else:
+        # Stock osmnx profile (drive / drive_service).
+        G = ox.graph_from_place(place_name, network_type=resolved_network_type)
 
     if is_tty:
         _print_progress(85, "Processing graph")
@@ -116,6 +199,8 @@ def load_graph(place_name="Greater London, UK", network_type=None):
         print("Saving graph to cache...")
 
     ox.save_graphml(G, graph_path)
+    print(f"Built {resolved_network_type} graph in {time.time() - started:.0f}s "
+          f"({G.number_of_nodes()} nodes, {G.number_of_edges()} edges)")
     if is_tty:
         _print_progress(100, "Ready")
         print()
@@ -252,7 +337,9 @@ def get_ordered_route(G, origin_node, dest_node, constraints,
                       connector_mult=CONNECTOR_MULT,
                       max_states=MAX_ORDERED_STATES,
                       corridor_margin_deg=0.008,
-                      pure_length_cost=False):
+                      pure_length_cost=False,
+                      edge_cost_fn=None,
+                      destination_penalty=None):
     """One ordered-constraint A* over the whole run.
 
     State is ``(node, idx, prev_node)`` where ``idx`` counts satisfied
@@ -270,7 +357,19 @@ def get_ordered_route(G, origin_node, dest_node, constraints,
     ``pure_length_cost`` runs the identical search with the connector
     multiplier and structural penalties zeroed; its goal-cost is the ordered
     optimum used by the ``excess_over_ordered_optimum`` QA metric.
+
+    ``edge_cost_fn(u, v, edge_data, prev)`` replaces the per-edge base cost
+    (the crow-flies mode uses it); it must never return less than the edge's
+    length, or the straight-line heuristic stops being admissible.
+
+    On the taxi graph, entering a destination-only (``taxi_access``
+    ``destination``) edge from an open one costs ``destination_penalty``
+    (default :data:`DESTINATION_ENTRY_PENALTY_M`): a route may start or end in
+    an access-only street but should not pass through one. The gate
+    (``TaxiRules.check_route``) is what enforces it.
     """
+    if destination_penalty is None:
+        destination_penalty = DESTINATION_ENTRY_PENALTY_M
     C = list(constraints)
     K = len(C)
     dest = G.nodes[dest_node]
@@ -394,10 +493,15 @@ def get_ordered_route(G, origin_node, dest_node, constraints,
             edge_data = _best_edge_data(bundle)
             if edge_data is None:
                 continue
-            if pure_length_cost:
+            if edge_cost_fn is not None:
+                base = edge_cost_fn(u, v, edge_data, prev)
+            elif pure_length_cost:
                 base = float(edge_data.get("length", 1.0) or 1.0)
             else:
                 base = _ordered_edge_cost(edge_data, prev_node=prev, next_node=v)
+            if destination_penalty:
+                base += _destination_entry_penalty(G, prev, u, edge_data,
+                                                   destination_penalty)
 
             names = edge_name_set(G, u, v)
             advance = False
@@ -435,6 +539,7 @@ def get_ordered_route(G, origin_node, dest_node, constraints,
 
     info = {
         "reached_goal": goal_state is not None,
+        "destination_penalty": destination_penalty,
         "max_idx": max_idx,
         "dest_reached_idx": dest_reached_idx,
         "constraints": K,
@@ -623,15 +728,178 @@ def shortest_legal_length(G, origin_node, dest_node, prohibited_turns=None,
     Pure edge length, prohibited turns honoured, no corridor — the yardstick
     the gross-detour gate measures a run against.
     """
-    _, info = get_ordered_route(
+    route, info = get_ordered_route(
         G, origin_node, dest_node, [],
         prohibited_turns=prohibited_turns,
         max_states=max_states,
         corridor_margin_deg=None,
         pure_length_cost=True,
     )
-    cost = info.get("goal_cost")
-    return round(cost, 1) if cost is not None else None
+    if route is None:
+        return None
+    # The route's length, not the search cost: on the taxi graph the cost
+    # carries the destination-entry penalty, which is not distance.
+    return round(_route_length(G, route), 1)
+
+
+# ---------------------------------------------------------------------------
+# Crow-flies routing: the legal route that stays closest to the straight line
+# ---------------------------------------------------------------------------
+
+# Cost of entering a destination-only edge from an open one (taxi graph).
+DESTINATION_ENTRY_PENALTY_M = 2000.0
+
+# The crow-flies mode, chosen on the Blue Book agreement study
+# (scripts/evaluate_crow_flies.py over the 294 runs that pass under their
+# Blue Book sequence; the table is in ROADMAP.md). Agreement is flat for
+# lambda 0.75 to 2 with a 1.15 to 1.3 minor-road weight; this is the arg-max
+# of mean Jaccard (0.528, vs 0.462 for plain shortest-legal).
+CROW_FLIES_LAMBDA = 1.5
+# The lateral penalty is normalised by the run's straight-line length, so a
+# route bulging out by a quarter of the run pays the same on a 1 km run as on
+# an 8 km one. Floored so that a very short run does not blow it up.
+CROW_FLIES_MIN_SCALE_M = 1000.0
+# Road-class preference: length multipliers for minor roads (>= 1, so the
+# straight-line heuristic stays admissible). The Blue Book leans on main
+# roads; a mild 1.15 lifted mean Jaccard from 0.507 to 0.520 at lambda 1
+# (73 runs better, 44 worse). Heavier weights (1.5, 2.0) made it worse.
+CROW_FLIES_CLASS_WEIGHTS: dict = {
+    "residential": 1.15, "living_street": 1.15, "unclassified": 1.15,
+}
+# Passing an open gate (estate gates are often shut in practice).
+CROW_FLIES_GATE_PENALTY_M = 300.0
+UTURN_PENALTY_M = 5000.0
+
+GATE_NODE_BARRIERS = {"gate", "lift_gate", "swing_gate", "sliding_gate",
+                      "hampshire_gate", "bump_gate", "gate;entrance"}
+
+
+def _destination_entry_penalty(G, prev, u, edge_data, penalty):
+    if str(edge_data.get("taxi_access", "")) != "destination" or prev is None:
+        return 0.0
+    prev_data = _best_edge_data(G.get_edge_data(prev, u))
+    if prev_data is not None and str(prev_data.get("taxi_access", "")) == "destination":
+        return 0.0
+    return penalty
+
+
+def _point_segment_distance(px, py, bx, by, b_len2):
+    """Distance from (px, py) to the segment (0, 0)-(bx, by)."""
+    if b_len2 <= 0:
+        return math.hypot(px, py)
+    t = max(0.0, min(1.0, (px * bx + py * by) / b_len2))
+    return math.hypot(px - t * bx, py - t * by)
+
+
+class CrowFliesCost:
+    """Edge cost = length x class weight + lambda x (integral of the lateral
+    offset from the start-to-end segment along the edge) / scale.
+
+    ``scale`` is the run's straight-line length (floored at
+    ``min_scale_m``) in ``relative`` mode, or 1 km in ``absolute`` mode. The
+    offset is measured to the *segment*, so running past either end is also
+    off the line. The integral is the trapezoid rule over the edge geometry.
+    """
+
+    def __init__(self, G, origin_node, dest_node, lam=CROW_FLIES_LAMBDA,
+                 mode="relative", class_weights=None,
+                 min_scale_m=CROW_FLIES_MIN_SCALE_M,
+                 gate_penalty_m=CROW_FLIES_GATE_PENALTY_M,
+                 uturn_penalty_m=UTURN_PENALTY_M):
+        self.G = G
+        o, d = G.nodes[origin_node], G.nodes[dest_node]
+        self.lat0 = (o["y"] + d["y"]) / 2.0
+        self.kx = 111_320.0 * math.cos(math.radians(self.lat0))
+        self.ky = 110_540.0
+        self.ox, self.oy = o["x"], o["y"]
+        self.bx, self.by = self._xy(d["x"], d["y"])
+        self.b_len2 = self.bx * self.bx + self.by * self.by
+        straight = math.sqrt(self.b_len2)
+        self.straight_m = straight
+        self.scale = max(straight, min_scale_m) if mode == "relative" else 1000.0
+        self.lam = float(lam)
+        self.class_weights = dict(class_weights or {})
+        self.gate_penalty_m = gate_penalty_m
+        self.uturn_penalty_m = uturn_penalty_m
+        self._integral: dict = {}
+
+    def _xy(self, lon, lat):
+        return (lon - self.ox) * self.kx, (lat - self.oy) * self.ky
+
+    def offset_m(self, lon, lat):
+        x, y = self._xy(lon, lat)
+        return _point_segment_distance(x, y, self.bx, self.by, self.b_len2)
+
+    def lateral_integral(self, u, v, edge_data):
+        """Integral of the offset (m x m) along the edge u -> v."""
+        key = (u, v, id(edge_data))
+        cached = self._integral.get(key)
+        if cached is not None:
+            return cached
+        geom = edge_data.get("geometry")
+        if geom is not None:
+            pts = list(geom.coords)
+        else:
+            nu, nv = self.G.nodes[u], self.G.nodes[v]
+            pts = [(nu["x"], nu["y"]), (nv["x"], nv["y"])]
+        total = 0.0
+        prev_xy = self._xy(*pts[0])
+        prev_d = _point_segment_distance(prev_xy[0], prev_xy[1], self.bx, self.by, self.b_len2)
+        for lon, lat in pts[1:]:
+            xy = self._xy(lon, lat)
+            dd = _point_segment_distance(xy[0], xy[1], self.bx, self.by, self.b_len2)
+            seg = math.hypot(xy[0] - prev_xy[0], xy[1] - prev_xy[1])
+            total += 0.5 * (prev_d + dd) * seg
+            prev_xy, prev_d = xy, dd
+        self._integral[key] = total
+        return total
+
+    def class_weight(self, edge_data):
+        if not self.class_weights:
+            return 1.0
+        weights = [self.class_weights.get(h, 1.0)
+                   for h in _normalise_tag_values(edge_data.get("highway"))]
+        return max(1.0, min(weights)) if weights else 1.0
+
+    def __call__(self, u, v, edge_data, prev):
+        length = float(edge_data.get("length", 1.0) or 1.0)
+        cost = length * self.class_weight(edge_data)
+        if self.lam:
+            cost += self.lam * self.lateral_integral(u, v, edge_data) / self.scale
+        if self.gate_penalty_m and str(self.G.nodes[v].get("barrier", "")).lower() in GATE_NODE_BARRIERS:
+            cost += self.gate_penalty_m
+        if prev is not None and prev == v:
+            cost += self.uturn_penalty_m
+        return cost
+
+
+def route_crow_flies(G, origin_node, dest_node, prohibited_turns=None,
+                     lam=CROW_FLIES_LAMBDA, mode="relative", class_weights=None,
+                     max_states=MAX_ORDERED_STATES * 3, **cost_kwargs):
+    """The legal route that stays closest to the straight line.
+
+    Minimises length plus ``lam`` x the lateral deviation from the
+    start-to-end line (:class:`CrowFliesCost`), honouring prohibited turns,
+    with no corridor (a closed bridge can force a wide detour). ``lam=0`` is
+    plain shortest-legal. Returns ``(route_nodes | None, meta)``.
+    """
+    if class_weights is None:
+        class_weights = CROW_FLIES_CLASS_WEIGHTS
+    cost = CrowFliesCost(G, origin_node, dest_node, lam=lam, mode=mode,
+                         class_weights=class_weights, **cost_kwargs)
+    route, info = get_ordered_route(
+        G, origin_node, dest_node, [],
+        prohibited_turns=prohibited_turns,
+        max_states=max_states,
+        corridor_margin_deg=None,
+        edge_cost_fn=cost,
+    )
+    meta = _ordered_meta(G, route, info, "crow_flies" if route else "unroutable",
+                         [], 1)
+    meta["crow_flies"] = {"lambda": lam, "mode": mode,
+                          "class_weights": dict(class_weights or {}),
+                          "straight_m": round(cost.straight_m, 1)}
+    return route, meta
 
 
 # Budget for the reverse run. The reverse is not prescribed by the Blue Book;
@@ -698,15 +966,16 @@ def _ordered_optimum(G, origin_node, dest_node, active_constraints,
     length divided by this is the honest wastefulness metric — Blue Book
     geometry is by definition not the straight line, so comparing against the
     straight line punishes correct runs."""
-    _, info = get_ordered_route(
+    route, info = get_ordered_route(
         G, origin_node, dest_node, active_constraints,
         prohibited_turns=prohibited_turns,
         street_to_nodes=street_to_nodes,
         max_states=max_states,
         pure_length_cost=True,
     )
-    cost = info.get("goal_cost")
-    return round(cost, 1) if cost is not None else None
+    if route is None:
+        return None
+    return round(_route_length(G, route), 1)
 
 
 def _ordered_meta(G, route, info, mode, demoted, attempts):

@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from shapely.geometry import LineString, Point
 
+from .taxi_profile import restriction_exempts_taxi
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -61,18 +63,30 @@ def _best_edge_data(edge_bundle):
 # Turn Restrictions
 # ---------------------------------------------------------------------------
 
-def load_turn_restrictions(G, cache_dir="cache"):
+TURN_RESTRICTIONS_CACHE = "turn_restrictions_v2.json"
+LEGACY_TURN_RESTRICTIONS_CACHE = "turn_restrictions.json"
+
+
+def load_turn_restrictions(G, cache_dir="cache", profile=None):
     """
     Fetch OSM turn restrictions for the graph's bounding box via Overpass API.
     Returns a set of (from_node, via_node, to_node) prohibited triples mapped
     to the graph's node IDs.
 
-    The result is cached to ``cache/turn_restrictions.json``.
+    ``profile`` (default: the graph's ``krg_profile``, else ``drive``) decides
+    who the restrictions bind. On the ``taxi`` profile a restriction whose
+    ``except`` tag lists ``psv`` or ``taxi`` is not enforced; on ``drive``
+    every ``no_*`` restriction is, as before.
+
+    The raw relations (with their ``except`` tag) are cached to
+    ``turn_restrictions_v2.json``. The v1 cache carried no ``except`` tag and
+    is only used, with a warning, when Overpass cannot be reached.
     """
-    cache_path = Path(cache_dir) / "turn_restrictions.json"
+    profile = profile or (getattr(G, "graph", {}) or {}).get("krg_profile", "drive")
+    cache_path = Path(cache_dir) / TURN_RESTRICTIONS_CACHE
     if cache_path.exists():
         raw = json.loads(cache_path.read_text())
-        return _build_prohibited_set(G, raw)
+        return _build_prohibited_set(G, raw, profile=profile)
 
     # Compute bounding box from graph
     ys = [d['y'] for _, d in G.nodes(data=True)]
@@ -98,14 +112,29 @@ def load_turn_restrictions(G, cache_dir="cache"):
         from .osm_pois import fetch_overpass
         data = fetch_overpass(query)
     except Exception as e:
+        legacy = Path(cache_dir) / LEGACY_TURN_RESTRICTIONS_CACHE
+        if legacy.exists():
+            print(f"  Warning: Overpass query failed ({e}). Using the v1 cache, "
+                  "which has no taxi exemptions.")
+            return _build_prohibited_set(G, json.loads(legacy.read_text()),
+                                         profile=profile)
         print(f"  Warning: Overpass query failed ({e}). Skipping turn restrictions.")
         return set()
 
-    # Extract restriction relations
-    restrictions = []
-    elements_by_id = {e["id"]: e for e in data.get("elements", [])}
+    restrictions = parse_restriction_relations(data.get("elements", []))
 
-    for elem in data.get("elements", []):
+    # Cache
+    Path(cache_dir).mkdir(exist_ok=True)
+    cache_path.write_text(json.dumps(restrictions, indent=2))
+    print(f"  Cached {len(restrictions)} turn restrictions.")
+
+    return _build_prohibited_set(G, restrictions, profile=profile)
+
+
+def parse_restriction_relations(elements):
+    """Overpass relation elements -> the cached restriction records."""
+    restrictions = []
+    for elem in elements:
         if elem.get("type") != "relation":
             continue
         tags = elem.get("tags", {})
@@ -124,22 +153,19 @@ def load_turn_restrictions(G, cache_dir="cache"):
                 to_way = m["ref"]
 
         if from_way and via_node and to_way:
-            restrictions.append({
+            record = {
                 "type": restriction_type,
                 "from_way": from_way,
                 "via_node": via_node,
                 "to_way": to_way,
-            })
-
-    # Cache
-    Path(cache_dir).mkdir(exist_ok=True)
-    cache_path.write_text(json.dumps(restrictions, indent=2))
-    print(f"  Cached {len(restrictions)} turn restrictions.")
-
-    return _build_prohibited_set(G, restrictions)
+            }
+            if tags.get("except"):
+                record["except"] = tags["except"]
+            restrictions.append(record)
+    return restrictions
 
 
-def _build_prohibited_set(G, restrictions):
+def _build_prohibited_set(G, restrictions, profile="drive"):
     """
     Map OSM way/node IDs to graph node triples.
 
@@ -169,6 +195,9 @@ def _build_prohibited_set(G, restrictions):
 
     prohibited = set()
     for r in restrictions:
+        if profile == "taxi" and restriction_exempts_taxi(r):
+            # ``except=psv`` / ``except=taxi``: the sign does not bind a cab.
+            continue
         via = osm_to_node.get(r["via_node"])
         if via is None:
             continue

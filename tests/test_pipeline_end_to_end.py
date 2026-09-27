@@ -154,7 +154,8 @@ class PipelineEndToEndTests(unittest.TestCase):
         self.assertEqual(qa["1"]["truncated_legs"], 0)
         provenance = qa["_provenance"]
         self.assertEqual(provenance["graph_nodes"], self.graph.number_of_nodes())
-        self.assertEqual(provenance["network_type"], "drive")
+        # The default profile is taxi (router.DEFAULT_NETWORK_TYPE).
+        self.assertEqual(provenance["network_type"], "taxi")
 
     def test_unresolvable_endpoint_is_recorded_not_dropped(self):
         # Strip the Points List: the origin can no longer resolve, and the run

@@ -10,9 +10,43 @@ regression diff gates at promotion rather than in CI; why geometry changes are
 reported but non-gating; why both ordered metrics are tracked).
 
 ## Project Defaults
-- Routing is tuned for cab-legal behavior on a strict `drive` graph by default.
-- Override graph profile with `KRG_GRAPH_NETWORK_TYPE` or `--network-type` in the Blue Book pipeline.
-  - Supported values: `drive`, `drive_service`.
+- Routing runs on the **taxi-legal graph** (`taxi` profile,
+  `taxi_profile.py`): bus gates that admit taxis and taxi contraflows are
+  open, `access=no` bus-only roads and busways are closed, and every edge
+  touching a motor-vehicle `barrier` node (bollard, planter, bus trap, ...)
+  is cut, which is how OSM maps LTN modal filters. The module docstring is
+  the full record of tag decisions; change a rule there and in its test.
+  Turn restrictions with `except=psv`/`taxi` do not bind the taxi profile.
+- The taxi graph is cached as `london_taxi_v1.graphml` with a sidecar
+  `london_taxi_v1.taxi_rules.json` (closed ways, destination-only ways,
+  contraflows, blocking barriers). Delete both to rebuild: the 2026-09
+  build took 19 minutes wall clock and 3.1 GB peak memory, almost all of it
+  waiting on Overpass and writing the 179 MB graphml (98 s of CPU). The
+  named-filter harvest used only to explain failures is cached separately
+  as `london_filtered_streets_v2.json`.
+- Override the profile with `KRG_GRAPH_NETWORK_TYPE` or `--network-type`:
+  `taxi` (default), `drive`, `drive_service`.
+
+## Route Source: Blue Book or Crow-Flies
+- Every run ships `route_source`: `blue_book` when its Blue Book sequence
+  passes every gate, else `crow_flies` with `route_source_reason` (plain
+  English, no em dashes: "Hammersmith Bridge is closed to motor vehicles",
+  "Modal filter on Braes Street (closed to motor traffic)", ...). The
+  failed Blue Book attempt stays on the QA record under `blue_book`.
+- Crow-flies is the Knowledge rule for a run the Blue Book can't give us:
+  the legal taxi route closest to the straight line
+  (`router.route_crow_flies`: length x road-class weight + lambda x the
+  lateral offset integrated along the route, normalised by the run's
+  length). Lambda and the weights were chosen on the Blue Book agreement
+  study (`scripts/evaluate_crow_flies.py`; numbers in ROADMAP.md). Re-run
+  the study before changing them.
+- A crow-flies route faces the same hard gates (legal both ways, sane both
+  ways) plus the taxi-legality gate (`TaxiRules.check_route`: no blocking
+  barrier, no closed way, no access-only street passed through). So does a
+  Blue Book route: a Blue Book route that fails taxi legality ships
+  crow-flies.
+- `scripts/check_taxi_legality.py <runPoints.json> --network-type drive`
+  checks an older data set against the taxi rules.
 
 ## Run Names and Endpoints
 - TfL Annex B (`blue_book_demo/tfl_blue_book_annex_b.txt`, vendored with its
@@ -78,16 +112,21 @@ reported but non-gating; why both ordered metrics are tracked).
   is a hard gap and fails the run. The reverse run (not prescribed) also
   repairs leg loops and falls back to the shortest legal route when the
   reversed sequence stays over budget (`rev_fallback`).
-- Current baseline (`krg regression snapshot`, 320 runs, fresh graph): 291
-  `passed`, mean `ordered_coverage` 0.992, mean `strict_ordered` 0.976,
-  295/320 runs fully in Blue Book order, **0 legality failures** (either
-  direction), 6 sanity failures, 0 preflight failures. Routing mode splits
-  295 `ordered_strict` / 24 `ordered_relaxed` / 1 `shortest_path`.
-- What is left: the 6 sanity failures are Blue Book runs that cross just
-  outside the radius (37, 68, 109, 189 — Chiswick Bridge), run 56 (TfL's
-  "Spitalfields Market, E10" is in E1) and run 258; 24 runs carry a loop
-  demotion (Blue Book order undrivable without a lap on today's OSM);
-  directness (`is_direct: false`, triage only) is 54.
+- Current baseline (`krg regression snapshot`, 320 runs, taxi graph,
+  2026-09): 320 `passed`, of which **294 under their Blue Book sequence** and
+  **26 `crow_flies`** (see "Route Source" above; the failed Blue Book
+  attempt is on each record under `blue_book`). 293/320 runs fully in Blue
+  Book order; mean `ordered_coverage` 0.954 and `strict_ordered` 0.926 over
+  all 320 (the crow-flies runs pull these down by design: they are measured
+  against the sequence they no longer follow). 0 legality failures, 0
+  sanity failures, 0 taxi-legality failures, either direction. Routing
+  mode: 293 `ordered_strict` / 1 `ordered_relaxed` / 26 `crow_flies`.
+- 5 preflight warnings (endpoint snapped > 50 m: runs 24, 90, 121, 124,
+  150) are the taxi graph at work: each endpoint's old snap point is on a
+  way now closed or access-only (Albert Bridge is `access=no` in OSM since
+  2026, Station Approach SW12 is `motor_vehicle=destination`, a gate at
+  Manor Fields), so the cab sets down at the nearest taxi-legal point.
+  `promote_to_app.py --min-passed` counts Blue Book passes only.
 - Step text is not a fidelity metric. `ordered_coverage` / `strict_ordered` are
   computed from the graph edges the route traverses (`_route_edge_names`), not
   from `route.steps`, so changing how the call is worded cannot move them.
