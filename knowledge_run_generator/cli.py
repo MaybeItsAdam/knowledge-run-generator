@@ -252,6 +252,18 @@ def qa(report, top):
     click.echo(f"  preflight failures: {len(preflight_fails)}")
     click.echo(f"  directness failures: {len(directness_fails)}")
     click.echo(f"  legality failures:   {len(legality_fails)}")
+    # Hard gate (schema >= 5): gross detour or leaving the six-mile area, in
+    # either direction. Unlike directness above, these fail `passed`.
+    sanity_fails = [k for k, v in data.items() if v.get("sane") is False]
+    click.echo(f"  sanity failures:     {len(sanity_fails)}"
+               "   (gross detour / outside the six-mile area; gating)")
+    rev_illegal = [k for k, v in data.items() if v.get("rev_legal") is False]
+    if rev_illegal:
+        click.echo(f"  reverse legality failures: {len(rev_illegal)}")
+    remote = sum(len(v.get("remote_constraints") or []) for v in data.values())
+    if remote:
+        click.echo(f"  remote constraints dropped: {remote} "
+                   f"(in {sum(1 for v in data.values() if v.get('remote_constraints'))} runs)")
 
     # Ordered-router ladder telemetry (schema >= 4).
     modes = Counter(v.get("routing_mode") for v in data.values()
@@ -305,6 +317,10 @@ def qa(report, top):
     for k in preflight_fails[:top]:
         reasons = data[k].get("preflight_reasons", [])
         click.echo(f"  Run {k}: {'; '.join(reasons) or '(no reasons)'}")
+
+    click.echo(f"\nTop {top} sanity failures:")
+    for k in sanity_fails[:top]:
+        click.echo(f"  Run {k}: {'; '.join(data[k].get('sanity_reasons') or [])}")
 
     click.echo(f"\nTop {top} directness failures:")
     for k in directness_fails[:top]:

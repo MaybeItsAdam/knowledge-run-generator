@@ -74,6 +74,18 @@ class Constraint:
     raw: str       # original Blue Book text, for QA
     source: str    # exact | junction | abbrev | fuzzy | word_removal | ring
     hard: bool     # False for low-confidence resolutions
+    # STREET only: the graph nodes of the instance(s) of the name this run
+    # drives (``locality.localise_constraints``). ``None`` matches the name
+    # anywhere — London reuses street names, so an unlocalised constraint can
+    # be satisfied by a namesake on the other side of the city.
+    nodes: frozenset | None = None
+
+    def matches_edge(self, names, u, v) -> bool:
+        """True when traversing (u, v), whose name set is *names*, meets this
+        STREET constraint — right name, and the localised instance."""
+        if self.key not in names:
+            return False
+        return self.nodes is None or (u in self.nodes and v in self.nodes)
 
 
 @dataclass

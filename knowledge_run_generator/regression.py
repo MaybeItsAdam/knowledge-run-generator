@@ -60,6 +60,8 @@ class RunFingerprint:
     strict_ordered: float | None = None
     street_coverage: float | None = None
     routing_mode: str | None = None
+    # Hard sanity gate (both directions): no gross detour, inside the area.
+    sane: bool | None = None
 
 
 @dataclasses.dataclass
@@ -80,6 +82,8 @@ class Snapshot:
     # 1.0 — see the note on RunFingerprint.
     mean_ordered: float = 0.0
     mean_strict: float = 0.0
+    # Runs failing the hard sanity gate (gross detour / outside the area).
+    sanity_fails: int = 0
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -91,6 +95,7 @@ class Snapshot:
             "fully_ordered": self.fully_ordered,
             "mean_ordered": self.mean_ordered,
             "mean_strict": self.mean_strict,
+            "sanity_fails": self.sanity_fails,
             "runs": {k: dataclasses.asdict(v) for k, v in self.runs.items()},
         }
 
@@ -113,6 +118,7 @@ class Snapshot:
                 strict_ordered=v.get("strict_ordered"),
                 street_coverage=v.get("street_coverage"),
                 routing_mode=v.get("routing_mode"),
+                sane=v.get("sane"),
             )
             for k, v in data.get("runs", {}).items()
         }
@@ -125,6 +131,7 @@ class Snapshot:
             fully_ordered=data.get("fully_ordered", 0),
             mean_ordered=data.get("mean_ordered", 0.0),
             mean_strict=data.get("mean_strict", 0.0),
+            sanity_fails=data.get("sanity_fails", 0),
             runs=runs,
         )
 
@@ -162,6 +169,7 @@ def fingerprint_run(qa_entry: dict[str, Any]) -> RunFingerprint:
         strict_ordered=qa_entry.get("strict_ordered"),
         street_coverage=qa_entry.get("street_coverage"),
         routing_mode=qa_entry.get("routing_mode"),
+        sane=qa_entry.get("sane"),
     )
 
 
@@ -201,6 +209,7 @@ def summarise(report_path: Path = DEFAULT_REPORT_PATH) -> Snapshot:
         fully_ordered=fully_ordered,
         mean_ordered=_mean("ordered_coverage"),
         mean_strict=_mean("strict_ordered"),
+        sanity_fails=sum(1 for v in runs.values() if v.sane is False),
         runs=runs,
     )
 
@@ -265,6 +274,7 @@ def diff(baseline: Snapshot, current: Snapshot) -> Diff:
     _track("preflight_fails", baseline.preflight_fails, current.preflight_fails, higher_is_better=False)
     _track("directness_fails", baseline.directness_fails, current.directness_fails, higher_is_better=False)
     _track("legality_fails", baseline.legality_fails, current.legality_fails, higher_is_better=False)
+    _track("sanity_fails", baseline.sanity_fails, current.sanity_fails, higher_is_better=False)
     # `total` was never tracked, so a build that dropped runs entirely could
     # report clean as long as the survivors held up.
     _track("total", baseline.total, current.total, higher_is_better=True)

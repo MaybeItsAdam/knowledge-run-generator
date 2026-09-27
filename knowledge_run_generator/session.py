@@ -27,6 +27,7 @@ from .cache import cache_dir as krg_cache_dir
 from .caller import generate_call
 from .constraints import Constraint
 from .gazetteer import Gazetteer, load_knowledge_pois, preflight_run
+from .locality import localise_constraints
 from .geocoder import geocode_and_snap
 from .router import (
     _extract_route_metadata,
@@ -241,6 +242,10 @@ class Session:
                 constraints.append(
                     Constraint("STREET", canonical, str(name), "exact", False)
                 )
+            # Pin each via to its instance near this trip (a bare "High
+            # Street" means the local one); vias with none nearby are dropped.
+            constraints = localise_constraints(
+                G, constraints, start_node, end_node).constraints
             route_nodes, _meta = route_ordered_with_ladder(
                 G, start_node, end_node, constraints,
                 prohibited_turns=prohibited_turns,

@@ -42,6 +42,11 @@ class ValidationResult:
     has_sane_detours: bool = True
     detour_violations: list = field(default_factory=list)
 
+    # Hard gate: no gross detour, never out of the six-mile area.
+    is_sane: bool = True
+    sanity_metrics: dict = field(default_factory=dict)
+    sanity_reasons: list = field(default_factory=list)
+
 
 def _best_edge_data(edge_bundle):
     """
@@ -238,6 +243,93 @@ def _haversine(lat1, lon1, lat2, lon2):
     dlam = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+# ---------------------------------------------------------------------------
+# Route sanity — the hard gate on gross detours and on leaving the area
+# ---------------------------------------------------------------------------
+
+# The Knowledge area: six miles from Charing Cross (the same centre and radius
+# the app's independent verifier uses).
+CHARING_CROSS = (51.507389, -0.127917)
+SIX_MILES_M = 9656.0
+# How far past the radius a route may stray before it fails. An endpoint that
+# sits outside the radius raises the allowance to its own distance.
+RADIUS_TOLERANCE_M = 500.0
+
+# Gross-detour gate. `is_direct` (ratio 1.8) is triage only — Blue Book runs
+# are legitimately indirect. These catch the absurd: a route several times
+# the crow-flies line, or far longer than the shortest legal route on the same
+# graph. Each also needs a large absolute excess, so a short run looping one
+# block round a one-way system does not fail on ratio alone.
+GROSS_STRAIGHT_RATIO = 3.0
+GROSS_STRAIGHT_MIN_M = 500.0
+GROSS_SHORTEST_RATIO = 2.0
+GROSS_MIN_EXCESS_M = 2000.0
+
+
+def check_route_sanity(G, route_nodes, origin_node, dest_node, shortest_m=None,
+                       straight_ratio=GROSS_STRAIGHT_RATIO,
+                       shortest_ratio=GROSS_SHORTEST_RATIO,
+                       min_excess_m=GROSS_MIN_EXCESS_M,
+                       radius_tolerance_m=RADIUS_TOLERANCE_M):
+    """Hard sanity gate for one direction of a run.
+
+    Fails when the route
+
+    * is more than ``straight_ratio`` x the straight line (for a straight line
+      of at least 500 m) and at least ``min_excess_m`` longer than it,
+    * is more than ``shortest_ratio`` x ``shortest_m`` — the unconstrained
+      shortest legal route between the same nodes — and at least
+      ``min_excess_m`` longer, or
+    * goes further from Charing Cross than the six-mile radius (or than the
+      farther endpoint, when an endpoint is itself outside it) plus
+      ``radius_tolerance_m``.
+
+    Returns ``(ok, metrics, reasons)``.
+    """
+    if not route_nodes or len(route_nodes) < 2:
+        return False, {}, ["no route"]
+    reasons = []
+    o = G.nodes[origin_node]
+    d = G.nodes[dest_node]
+    straight = _haversine(o["y"], o["x"], d["y"], d["x"])
+    length = 0.0
+    for a, b in zip(route_nodes, route_nodes[1:]):
+        best = _best_edge_data(G.get_edge_data(a, b))
+        if best:
+            length += best.get("length", 0) or 0
+
+    metrics = {
+        "length_m": round(length, 1),
+        "straight_m": round(straight, 1),
+        "straight_ratio": round(length / straight, 3) if straight > 0 else None,
+        "shortest_m": round(shortest_m, 1) if shortest_m else None,
+        "shortest_ratio": round(length / shortest_m, 3) if shortest_m else None,
+    }
+    if (straight >= GROSS_STRAIGHT_MIN_M and length > straight * straight_ratio
+            and length - straight >= min_excess_m):
+        reasons.append(f"route {length:.0f}m is {length / straight:.1f}x the "
+                       f"{straight:.0f}m straight line")
+    if (shortest_m and length > shortest_m * shortest_ratio
+            and length - shortest_m >= min_excess_m):
+        reasons.append(f"route {length:.0f}m is {length / shortest_m:.1f}x the "
+                       f"{shortest_m:.0f}m shortest legal route")
+
+    cy, cx = CHARING_CROSS
+
+    def from_centre(n):
+        node = G.nodes[n]
+        return _haversine(cy, cx, node["y"], node["x"])
+
+    allowance = max(SIX_MILES_M, from_centre(origin_node), from_centre(dest_node))
+    farthest = max(from_centre(n) for n in route_nodes)
+    metrics["max_from_centre_m"] = round(farthest, 1)
+    metrics["radius_excess_m"] = round(max(0.0, farthest - SIX_MILES_M), 1)
+    if farthest > allowance + radius_tolerance_m:
+        reasons.append(f"route reaches {farthest:.0f}m from Charing Cross, "
+                       f"{farthest - SIX_MILES_M:.0f}m outside the six-mile radius")
+    return not reasons, metrics, reasons
 
 
 def check_waypoint_detours(G, route_nodes, waypoint_nodes, origin_node, dest_node):
@@ -564,7 +656,9 @@ def check_constraint_order(G, route_nodes, constraints, min_coverage=1.0):
             return i < origin_prefix
         constraint = C[i]
         if constraint.kind == "STREET":
-            return constraint.key in edge_names[j]
+            # Position j >= 1 is the edge route_nodes[j-1] -> route_nodes[j].
+            return constraint.matches_edge(
+                edge_names[j], route_nodes[j - 1], route_nodes[j])
         return route_nodes[j] in constraint.key
 
     m = len(edge_names)
@@ -763,6 +857,9 @@ def validate_route(G, route_nodes, origin_node, dest_node,
       - hard_gaps  (int) — number of hard constraints the router had to
         demote to produce this route. Anything > 0 fails the run: the route
         exists but is not the Blue Book run.
+      - shortest_m (float) — length of the unconstrained shortest legal route
+        between the same nodes, for the gross-detour gate
+        (:func:`check_route_sanity`), which always runs.
 
     Returns a :class:`ValidationResult`.
     """
@@ -818,6 +915,17 @@ def validate_route(G, route_nodes, origin_node, dest_node,
     # gated — a Knowledge run is by definition not the straight line, and the
     # honest wastefulness metric is `excess_over_ordered_optimum`, computed
     # against the ordered optimum rather than the crow-flies line.
+    #
+    # Directness-as-triage has a floor, though: a route several times the
+    # straight line or the shortest legal route, or one that leaves the
+    # six-mile area, is not a Blue Book run however well ordered it is. That
+    # is a hard failure (`check_route_sanity`) — it is how a 35.9 km route
+    # for a 2.7 km run passed this gate.
+    result.is_sane, result.sanity_metrics, result.sanity_reasons = check_route_sanity(
+        G, route_nodes, origin_node, dest_node,
+        shortest_m=config.get("shortest_m"),
+    )
     hard_gaps = int(config.get("hard_gaps") or 0)
-    result.passed = result.is_legal and result.is_ordered and hard_gaps == 0
+    result.passed = (result.is_legal and result.is_ordered and hard_gaps == 0
+                     and result.is_sane)
     return result

@@ -43,14 +43,34 @@ reported but non-gating; why both ordered metrics are tracked).
   prescribed streets. Never quote it as a correctness figure on its own.
 - Blue Book fidelity is `ordered_coverage` (track this) and `strict_ordered`
   (triage with this). Both are in `qa_report.json` and surfaced by `krg qa`.
-- Current baseline (`krg regression snapshot`, 320 runs): 316 `passed`, mean
-  `ordered_coverage` 0.991, mean `strict_ordered` 0.974, 303/320 runs fully in
-  Blue Book order, **0 legality failures**, 0 preflight failures. Routing mode
-  splits 303 `ordered_strict` / 15 `ordered_relaxed` / 2 `shortest_path`.
-- The open front is directness: 70 runs exceed the ratio threshold
-  (`is_direct: false`) without failing the gate. That, plus the 17 runs not
-  fully ordered and the 4 not passing (46, 188, 189, 250 — OSM-vs-Blue-Book
-  drift such as the Hammersmith Bridge closure), is what is left.
+- `passed` also requires both directions to pass the hard sanity gate
+  (`validator.check_route_sanity`): no route over 3x the straight line or 2x
+  the shortest legal route (each with >= 2 km excess), and none straying more
+  than 500 m past the six-mile radius (or past an endpoint that is itself
+  outside it). The reverse must also be legal. This is what the independent
+  app verifier kept catching and our gate did not (run 150: 35.9 km for a
+  2.7 km run, `passed: true`).
+- STREET constraints are **localised** (`locality.localise_constraints`) to
+  the instance of the name near the run. Unlocalised, a constraint was met by
+  any namesake in London, so an unreachable local street sent the search
+  across the city. A name with no instance near the run is recorded in
+  `remote_constraints` and dropped as a gap.
+- Laps of >= 1 km (the same directed edge driven twice) are repaired by
+  demoting the constraint that forced them (`loop_demotions`); forward, that
+  is a hard gap and fails the run. The reverse run (not prescribed) also
+  repairs leg loops and falls back to the shortest legal route when the
+  reversed sequence stays over budget (`rev_fallback`).
+- Current baseline (`krg regression snapshot`, 320 runs, fresh graph): 281
+  `passed`, mean `ordered_coverage` 0.991, mean `strict_ordered` 0.972,
+  292/320 runs fully in Blue Book order, **0 legality failures** (either
+  direction), 17 sanity failures, 15 preflight failures. Routing mode splits
+  292 `ordered_strict` / 27 `ordered_relaxed` / 1 `shortest_path`.
+- What is left: the 17 sanity failures are mostly endpoints kilometres from
+  the start of their Blue Book sequence (150, 156, 166, 251, 300, 305, 319,
+  56, 72, 14) and Blue Book runs that cross just outside the radius (37, 68,
+  109, 189 — Chiswick Bridge); 27 runs carry a loop demotion (Blue Book
+  order undrivable without a lap on today's OSM); directness (`is_direct:
+  false`, triage only) is 76.
 - Step text is not a fidelity metric. `ordered_coverage` / `strict_ordered` are
   computed from the graph edges the route traverses (`_route_edge_names`), not
   from `route.steps`, so changing how the call is worded cannot move them.
