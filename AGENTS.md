@@ -130,7 +130,7 @@ reported but non-gating; why both ordered metrics are tracked).
   graph builds; taking the first as the street and the rest as aliases
   moved street-tier endpoints on a rebuild (run 51's Southwark Bridge EC4
   resolved to Southwark Bridge Road SE1).
-  `promote_to_app.py --min-passed` counts Blue Book passes only.
+- `promote_to_app.py --min-passed` counts Blue Book passes only.
 - Step text is not a fidelity metric. `ordered_coverage` / `strict_ordered` are
   computed from the graph edges the route traverses (`_route_edge_names`), not
   from `route.steps`, so changing how the call is worded cannot move them.
