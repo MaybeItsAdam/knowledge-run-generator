@@ -177,25 +177,36 @@ def build_alias_index(G) -> AliasIndex:
         if not variants:
             continue
 
-        # Prefer the edge's ``name`` as canonical; fall back to the first variant
-        raw_name = data.get("name")
-        if isinstance(raw_name, (list, tuple)) and raw_name:
-            raw_name = raw_name[0]
-        canonical = normalise(raw_name) if raw_name else variants[0]
-        if not canonical:
-            canonical = variants[0]
+        # Every ``name`` on the edge is a real street. osmnx merges the names
+        # of the ways it simplifies into one edge as a list built from a set,
+        # so its order changes from one graph build to the next; taking only
+        # the first as canonical made "SOUTHWARK BRIDGE" a street on one
+        # build and an alias of Southwark Bridge Road on the next, which
+        # moved run 51's endpoint 860 m south of the river.
+        raw_names = data.get("name")
+        if not isinstance(raw_names, (list, tuple)):
+            raw_names = [raw_names] if raw_names else []
+        canonicals = sorted({c for c in (normalise(n) for n in raw_names if n) if c})
+        if not canonicals:
+            canonicals = [variants[0]]
 
-        bucket = canonical_to_nodes.setdefault(canonical, set())
-        bucket.add(u)
-        bucket.add(v)
+        for canonical in canonicals:
+            bucket = canonical_to_nodes.setdefault(canonical, set())
+            bucket.add(u)
+            bucket.add(v)
 
         for variant in variants:
-            if variant and variant != canonical:
+            if variant and variant not in canonicals:
                 # Only register an alias if it doesn't clash with a real street
                 # of that name — otherwise we'd collapse two distinct streets.
                 existing = alias_to_canonical.get(variant)
                 if existing is None and variant not in canonical_to_nodes:
-                    alias_to_canonical[variant] = canonical
+                    alias_to_canonical[variant] = canonicals[0]
+
+    # A name registered as an alias before it was seen as a street's own name
+    # is a street, not an alias.
+    for name in [a for a in alias_to_canonical if a in canonical_to_nodes]:
+        del alias_to_canonical[name]
 
     return AliasIndex(
         canonical_to_nodes=canonical_to_nodes,
@@ -211,7 +222,8 @@ def build_alias_index(G) -> AliasIndex:
 #   3 -> directional expansions (NTH/STH/WST, N/S/E/W before SIDE) added to
 #        the normaliser
 #   4 -> hyphens fold to spaces ("Shoot-up Hill" == "SHOOT UP HILL")
-INDEX_FORMAT_VERSION = 4
+#   5 -> every name of a merged edge is canonical (list order is not stable)
+INDEX_FORMAT_VERSION = 5
 
 
 def graph_fingerprint(G) -> tuple:
