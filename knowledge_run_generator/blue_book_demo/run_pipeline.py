@@ -27,6 +27,11 @@ from knowledge_run_generator.router import (
     nodes_to_coords_geometry, _extract_route_metadata,
     route_ordered_with_ladder, constraint_waypoints, shortest_legal_length,
     route_reverse, LOOP_EXCESS_M,
+    load_taxi_rules, resolve_network_type, route_crow_flies,
+    CROW_FLIES_LAMBDA, CROW_FLIES_CLASS_WEIGHTS,
+)
+from knowledge_run_generator.route_source import (
+    BLUE_BOOK, CROW_FLIES, blue_book_failure_reason,
 )
 from knowledge_run_generator.validator import (
     BLUE_BOOK_RADIUS_ALLOWANCE_M, check_constraint_order, check_route_sanity, check_run_shape,
@@ -69,7 +74,11 @@ from knowledge_run_generator import caller
 # 5: constraints are localised (remote_constraints); `passed` also requires
 #    both directions to be sane (no gross detour, inside the six-mile area)
 #    and the reverse to be legal — sane / sanity_reasons / shortest_m / ...
-QA_SCHEMA_VERSION = 5
+# 6: taxi graph + crow-flies. Records carry route_source ("blue_book" |
+#    "crow_flies"), route_source_reason, rev_route_source, taxi_legal /
+#    taxi_violations (both directions), and, for a crow-flies run, the Blue
+#    Book attempt's own verdict under "blue_book".
+QA_SCHEMA_VERSION = 6
 
 
 def _json_default(o):
@@ -503,6 +512,20 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
     prohibited_turns = load_turn_restrictions(G, cache_dir=str(cache_dir))
     print(f"  {len(prohibited_turns)} prohibited turn triples loaded.")
 
+    # Taxi legality rules (closed ways, access-only ways, modal filters).
+    # Present when the graph is the taxi profile; every shipped route is
+    # checked against them.
+    taxi_rules = None
+    if (G.graph or {}).get("krg_profile") == "taxi":
+        taxi_rules = load_taxi_rules()
+        if taxi_rules is None:
+            raise RuntimeError(
+                "Taxi graph loaded but its rules sidecar is missing; delete the "
+                "cached london_taxi_v*.graphml and rebuild.")
+        print(f"  taxi rules: {len(taxi_rules.barriers)} modal filters/barriers, "
+              f"{len(taxi_rules.closed_ways)} closed ways, "
+              f"{len(taxi_rules.destination_ways)} access-only ways.")
+
     # Load POI overrides for the Blue Book demo.
     # The core knowledge_run_generator package is data-agnostic; we provide
     # the specific Knowledge POI coordinates here as an argument.
@@ -918,6 +941,129 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 print(f"  [legality-fail] BA {len(rev_turn_violations)} prohibited turn(s)")
             run_passed = validation.passed and rev_legal and rev_sane
 
+            # ----- Taxi legality of the Blue Book route -----
+            fwd_taxi_v = taxi_rules.check_route(G, route_nodes) if taxi_rules else []
+            rev_taxi_v = (taxi_rules.check_route(G, rev_route_nodes)
+                          if taxi_rules and rev_route_nodes else [])
+            for v in fwd_taxi_v:
+                print(f"  [taxi-fail] AB {v['kind']} {v.get('name')} ({v.get('reason')})")
+            for v in rev_taxi_v:
+                print(f"  [taxi-fail] BA {v['kind']} {v.get('name')} ({v.get('reason')})")
+            fwd_ok = validation.passed and not fwd_taxi_v
+            rev_ok = rev_legal and rev_sane and not rev_taxi_v
+
+            # ----- Crow-flies replacement -----
+            # A Blue Book sequence that can't be driven on today's roads (or
+            # whose route fails a gate) ships the legal taxi route closest to
+            # the straight line instead, if *that* passes every gate.
+            route_source = BLUE_BOOK
+            rev_route_source = BLUE_BOOK
+            route_source_reason = None
+            blue_book_record = None
+            crow_failure = None
+            directions = []
+            if not fwd_ok:
+                directions = ["AB", "BA"]
+            elif not rev_ok:
+                directions = ["BA"]
+            crow = {}
+            for label in directions:
+                a, b = (start_node, end_node) if label == "AB" else (end_node, start_node)
+                cf_nodes, cf_meta = route_crow_flies(
+                    G, a, b, prohibited_turns=run_prohibited_turns)
+                if not cf_nodes or len(cf_nodes) < 2:
+                    crow_failure = f"{label}: no crow-flies route"
+                    break
+                cf_legal, _cf_turns = check_turn_legality(
+                    cf_nodes, run_prohibited_turns or set(),
+                    exempted_turns=exempted_turns or None)
+                shortest = (run_config.get("shortest_m") if label == "AB"
+                            else rev_shortest_m)
+                cf_sane, cf_sanity, cf_reasons = check_route_sanity(
+                    G, cf_nodes, a, b, shortest_m=shortest,
+                    radius_allowance_m=run_config.get("radius_allowance_m") or 0.0)
+                cf_taxi = taxi_rules.check_route(G, cf_nodes) if taxi_rules else []
+                if not (cf_legal and cf_sane and not cf_taxi):
+                    crow_failure = (f"{label}: crow-flies route fails "
+                                    f"legal={cf_legal} sane={cf_sane} "
+                                    f"taxi={len(cf_taxi)} {cf_reasons[:1]}")
+                    break
+                crow[label] = (cf_nodes, cf_meta, cf_sanity)
+            if crow_failure:
+                print(f"  [crow-flies] {crow_failure}; keeping the Blue Book route")
+                crow = {}
+            if "AB" in crow:
+                box = (min(start_lat, end_lat), min(start_lon, end_lon),
+                       max(start_lat, end_lat), max(start_lon, end_lon))
+                hard_gap_names = [d for d in (fwd_route_meta.get("demoted_constraints") or [])
+                                  if tuple(d)[1] in HARD_SOURCES]
+                route_source_reason = blue_book_failure_reason(
+                    demoted=[d for d in (fwd_route_meta.get("demoted_constraints") or [])
+                             if "HAMMERSMITH BRIDGE" in str(d[0]).upper()]
+                            + [g for g in compiled.gaps
+                               if "HAMMERSMITH BRIDGE" in str(g).upper()],
+                    loop_demotions=fwd_route_meta.get("loop_demotions") or [],
+                    hard_gap_names=hard_gap_names,
+                    sanity_reasons=([f"AB {r}" for r in validation.sanity_reasons]
+                                    + [f"BA {r}" for r in rev_sanity_reasons]),
+                    legal=validation.is_legal, rev_legal=rev_legal,
+                    taxi_violations=fwd_taxi_v, rev_taxi_violations=rev_taxi_v,
+                    rules=taxi_rules, run_box=box,
+                    no_route=fwd_route_meta.get("routing_mode") in ("shortest_path", "unroutable"),
+                )
+                blue_book_record = {
+                    "passed": bool(run_passed and not fwd_taxi_v and not rev_taxi_v),
+                    "routing_mode": fwd_route_meta.get("routing_mode"),
+                    "hard_gaps": run_config.get("hard_gaps", 0),
+                    "loop_demotions": fwd_route_meta.get("loop_demotions") or [],
+                    "demoted_constraints": fwd_route_meta.get("demoted_constraints") or [],
+                    "legal": validation.is_legal,
+                    "rev_legal": rev_legal,
+                    "sane": bool(validation.is_sane and rev_sane),
+                    "sanity_reasons": ([f"AB {r}" for r in validation.sanity_reasons]
+                                       + [f"BA {r}" for r in rev_sanity_reasons]),
+                    "taxi_violations": fwd_taxi_v,
+                    "rev_taxi_violations": rev_taxi_v,
+                    "ordered_coverage": full_order_metrics.get("ordered_coverage"),
+                    "strict_ordered": full_order_metrics.get("strict_ordered"),
+                    "fwd_distance_m": _extract_route_metadata(G, route_nodes)["total_distance"],
+                    "route_hash": hash_nodes(route_nodes),
+                }
+                print(f"  [crow-flies] replacing the Blue Book route: {route_source_reason}")
+                route_source = CROW_FLIES
+                route_nodes, fwd_route_meta = crow["AB"][0], crow["AB"][1]
+                waypoint_nodes = []
+                # Re-measure the shipped route: same gates, and the Blue Book
+                # fidelity it actually has (reported, not gated).
+                run_config["hard_gaps"] = 0
+                validation = _validate_fn(
+                    G, route_nodes, start_node, end_node,
+                    run_prohibited_turns, intermediate_streets,
+                    run_config, None,
+                    exempted_turns or None, constraints=[],
+                )
+                _, full_order_metrics = check_constraint_order(
+                    G, route_nodes, compiled.constraints)
+                metrics = validation.directness_metrics
+                fwd_taxi_v = []
+            if "BA" in crow:
+                rev_route_source = CROW_FLIES
+                rev_route_nodes, rev_route_meta = crow["BA"][0], {
+                    **crow["BA"][1], "shortest_m": rev_shortest_m}
+                rev_legal, rev_turn_violations = check_turn_legality(
+                    rev_route_nodes, run_prohibited_turns or set(),
+                    exempted_turns=exempted_turns or None)
+                rev_sane, rev_sanity, rev_sanity_reasons = check_route_sanity(
+                    G, rev_route_nodes, end_node, start_node, shortest_m=rev_shortest_m,
+                    radius_allowance_m=run_config.get("radius_allowance_m") or 0.0)
+                rev_taxi_v = []
+                if route_source == BLUE_BOOK:
+                    print("  [crow-flies] reverse replaced by the crow-flies route")
+            if crow:
+                run_passed = validation.passed and rev_legal and rev_sane
+            taxi_legal = not fwd_taxi_v and not rev_taxi_v
+            run_passed = bool(run_passed and taxi_legal)
+
             # ----- Convert to coordinates -----
             route_coords = nodes_to_coords_geometry(G, route_nodes)
             rev_coords = nodes_to_coords_geometry(G, rev_route_nodes)
@@ -950,6 +1096,11 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             run_obj = {
                 "id": run_id,
                 "title": f"{origin} to {destination}",
+                # Where the forward route comes from: the Blue Book sequence,
+                # or the crow-flies route when that sequence can't be driven
+                # today (route_source_reason says why, in plain English).
+                "route_source": route_source,
+                "route_source_reason": route_source_reason,
                 "waypoints": waypoints_lonlat,
                 "start": {
                     "name": origin,
@@ -1056,6 +1207,18 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
 
             optimum = fwd_route_meta.get("ordered_optimum_m")
             qa_results[str(run_id)].update({
+                "route_source": route_source,
+                "route_source_reason": route_source_reason,
+                "rev_route_source": rev_route_source,
+                "taxi_legal": taxi_legal,
+                "taxi_violations": fwd_taxi_v,
+                "rev_taxi_violations": rev_taxi_v,
+                "crow_flies_failure": crow_failure,
+                # The Blue Book attempt's own verdict, when it was replaced.
+                "blue_book": blue_book_record,
+                "crow_flies_config": ({"lambda": CROW_FLIES_LAMBDA,
+                                       "class_weights": CROW_FLIES_CLASS_WEIGHTS}
+                                      if crow else None),
                 # Which rung of the degradation ladder produced the route,
                 # and what was given up on the way down.
                 "routing_mode": fwd_route_meta.get("routing_mode"),
@@ -1127,7 +1290,11 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         "qa_schema_version": QA_SCHEMA_VERSION,
         "routing_mode": routing_mode,
         "generated_at": int(time.time()),
-        "network_type": network_type or os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive"),
+        "network_type": resolve_network_type(network_type),
+        "taxi_rules": ({"barriers": len(taxi_rules.barriers),
+                        "closed_ways": len(taxi_rules.closed_ways),
+                        "destination_ways": len(taxi_rules.destination_ways)}
+                       if taxi_rules else None),
         "graph_nodes": G.number_of_nodes(),
         "graph_edges": G.number_of_edges(),
         "street_names_indexed": len(street_to_nodes),
@@ -1242,8 +1409,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--network-type",
-        choices=["drive", "drive_service"],
-        help="OSM graph profile. Defaults to env KRG_GRAPH_NETWORK_TYPE or 'drive'.",
+        choices=["taxi", "drive", "drive_service"],
+        help="OSM graph profile. Defaults to env KRG_GRAPH_NETWORK_TYPE or 'taxi'.",
     )
     args = parser.parse_args()
 
@@ -1260,7 +1427,7 @@ if __name__ == "__main__":
     # Secondary GeoJSON export if requested via legacy flag or if format is geojson
     export_geojson = args.geojson or args.format == "geojson"
 
-    network_type = os.environ.get("KRG_GRAPH_NETWORK_TYPE", "drive")
+    network_type = resolve_network_type()
     if getattr(args, "network_type", None):
         network_type = args.network_type
 

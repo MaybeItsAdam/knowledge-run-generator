@@ -183,8 +183,25 @@ def validate_qa(min_passed: int) -> bool:
         print("  ! qa _provenance.osm_pois is 0 — the OSM gazetteer tier was "
               "empty for this build; run `krg osm-pois` and rebuild")
         ok = False
-    if passed < min_passed:
-        print(f"  ! only {passed} runs passed (< --min-passed {min_passed})")
+    # A crow-flies run passes too, so `passed` alone would let the Blue Book
+    # count slide unseen. The floor is on Blue Book passes, as it always was.
+    crow = {k: v for k, v in runs.items() if v.get("route_source") == "crow_flies"}
+    bb_passed = sum(1 for k, v in runs.items() if v.get("passed") and k not in crow)
+    print(f"  route source: {bb_passed} blue_book passed, "
+          f"{sum(1 for v in crow.values() if v.get('passed'))}/{len(crow)} crow_flies passed")
+    if bb_passed < min_passed:
+        print(f"  ! only {bb_passed} runs passed under their Blue Book sequence "
+              f"(< --min-passed {min_passed})")
+        ok = False
+    bad = sorted(int(k) for k, v in crow.items()
+                 if not v.get("route_source_reason") or v.get("taxi_legal") is not True)
+    if bad:
+        print(f"  ! crow-flies runs without a reason or not taxi-legal: {bad}")
+        ok = False
+    illegal = sorted(int(k) for k, v in runs.items()
+                     if v.get("passed") and v.get("taxi_legal") is False)
+    if illegal:
+        print(f"  ! passed runs that fail taxi legality: {illegal}")
         ok = False
 
     # Blue Book fidelity. `passed` now gates on legality + ordered traversal +
@@ -282,7 +299,8 @@ def main() -> int:
     # residual failures are explicit OSM-vs-Blue-Book drift (Hammersmith
     # Bridge, LTNs) and orders that can't be driven today without a loop.
     parser.add_argument("--min-passed", type=int, default=291,
-                        help="Minimum QA-passed run count required to promote.")
+                        help="Minimum number of runs passing under their Blue Book sequence "
+                             "(crow-flies runs are not counted).")
     # Floors, not exact counts: the row count moves with the Points List
     # edition and with the geocoder's success rate. Current build: 5,746 rows,
     # 5,530 of them carrying a borough.

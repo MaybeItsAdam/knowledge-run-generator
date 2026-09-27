@@ -301,6 +301,86 @@ Verified live: Runs 131 and 177 now fail preflight with
 
 ---
 
+## Stage 6: taxi-legal graph and crow-flies routes (2026-09)
+
+The Blue Book sequence of some runs can no longer be driven (Hammersmith
+Bridge, LTN filters, one-way changes that force a lap of 1 km or more). For
+those runs the app ships a new route made by the Knowledge rule itself: the
+legal taxi route that stays closest to the straight line.
+
+### Taxi graph
+
+`taxi_profile.py` replaces osmnx's private-car `drive` profile; its
+docstring is the tag record. On the 2026-09 extract: 3,938 ways closed to
+taxis, 662 access-only, 26 taxi contraflows, 1,653 blocking barrier nodes
+cut. The `drive` graph the app shipped before this stage kept most of those
+open: checked against these rules, **89 of the 320 shipped runs** (either
+direction) passed a modal filter, drove a way closed to taxis (`access=no`
+bus links at St George's Circus, Charing Cross Road and Waterloo Road,
+`vehicle=no` on City Road and Buckingham Palace Road, The Mall's
+`access=no` carriageway) or passed through an access-only street.
+`scripts/check_taxi_legality.py` reproduces the list.
+
+### Choosing lambda: agreement with the Blue Book
+
+The 294 runs that pass under their Blue Book sequence are human-authored
+ground truth. Each was re-routed unconstrained with crow-flies on the taxi
+graph and compared with its shipped Blue Book route (15 m tolerance).
+Jaccard is shared length over union length.
+
+| Mode | Jaccard mean | median | >= 0.8 | < 0.5 | recall med | precision med | length / BB med |
+|---|---|---|---|---|---|---|---|
+| shortest legal (lambda 0) | 0.462 | 0.427 | 18.0% | 57.8% | 0.539 | 0.655 | 0.903 |
+| lambda 0.5 | 0.493 | 0.460 | 18.4% | 54.8% | 0.592 | 0.677 | 0.905 |
+| lambda 1 | 0.507 | 0.479 | 19.1% | 53.4% | 0.607 | 0.694 | 0.911 |
+| lambda 2 | 0.493 | 0.457 | 16.0% | 55.4% | 0.590 | 0.665 | 0.916 |
+| lambda 4 | 0.471 | 0.447 | 14.3% | 60.5% | 0.582 | 0.662 | 0.925 |
+| lambda 1, minor roads x1.15 | 0.520 | 0.502 | 22.5% | 50.0% | 0.636 | 0.710 | 0.915 |
+| lambda 1, minor roads x1.2 | 0.522 | 0.517 | 22.8% | 48.6% | 0.642 | 0.713 | 0.915 |
+| lambda 1, minor roads x1.5 | 0.488 | 0.481 | 19.4% | 53.4% | 0.605 | 0.680 | 0.924 |
+| **lambda 1.5, minor roads x1.15 (chosen)** | **0.528** | 0.504 | 22.5% | 49.7% | 0.636 | 0.717 | 0.915 |
+
+Lambda is relative (offset normalised by the run's straight line, floored
+at 1 km); an absolute-per-km form scored the same at its best (0.507).
+"Minor roads" are residential, living_street and unclassified. The chosen
+mode has the best mean agreement, ties for the most runs at Jaccard >= 0.8,
+and keeps the offset tail close to the Blue Book's (90th percentile 127 m
+further from the line than the Blue Book route, against 308 m for shortest
+legal).
+
+**Honest reading: agreement is moderate, not high.** Half the runs share
+less than half their length with the Blue Book route; about one in five
+reproduces it almost exactly. Where they disagree the Blue Book is longer
+(crow-flies is a median 91.5% of its length) and runs on main roads: the
+low-agreement runs are the ones whose Blue Book route is well over the
+shortest legal route (median 1.18x, against 1.02x for the runs that agree).
+The Blue Book is not a shortest or straightest route; it is a
+main-road-first route taught to be recited. The road-class weight captures
+some of that (+0.02 mean Jaccard, +4 points at >= 0.8); heavier weights
+make it worse, so the remaining gap is not a simple class preference.
+Crow-flies routes are legal, sane and close to the line, which is the
+Knowledge rule, but they are not what a Blue Book author would have
+written, and they should be presented as generated.
+
+### Runs that ship crow-flies
+
+26 (2026-09 build), each with its reason on the record:
+
+- Hammersmith Bridge closed to motor vehicles: 188.
+- Modal filter, mapped in OSM as the road re-tagged `highway=cycleway` or
+  `pedestrian`: 16 (Greenwood Road), 177 (Vigo Street), 199 (Cowcross
+  Street), 244 (Bloomsbury Square), 292 (Braes Street).
+- The Blue Book route passes through an access-only street: 88 (Margery
+  Street), 173 (Burleigh Street).
+- The Blue Book order needs a lap of 1 km or more on today's roads (one-way
+  or banned-turn changes): 13, 52 (Stepney High Street), 68, 102, 201 (Alie
+  Street), 121, 169, 171, 175 (Old Palace Yard), 172, 256, 261 (Holborn
+  Circus), 238, 250, 254, 260.
+- The Blue Book route fails the sanity gate: 56 (TfL's "Spitalfields
+  Market, E10" is in E1), 258.
+
+Runs 55 and 231 now pass under the Blue Book on the taxi graph.
+
 ## Acceptance targets — **all met** (2026-08-12 build)
 
 | Metric | Baseline (Stage 1) | Target | **Achieved** |

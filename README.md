@@ -133,7 +133,7 @@ python -m knowledge_run_generator.webapp --user-runs-file /tmp/my_runs.json
 (env: `KRG_USER_RUNS_FILE`.)
 
 Routing graph profile override (used by all commands):
-- `KRG_GRAPH_NETWORK_TYPE` (`drive` default, or `drive_service`).
+- `KRG_GRAPH_NETWORK_TYPE` (`taxi` default, or osmnx's stock `drive` / `drive_service`). The taxi profile and its tag rules are documented in `knowledge_run_generator/taxi_profile.py`.
 
 Examples:
 
@@ -413,7 +413,7 @@ Options:
 - `--limit N`: only process the first N runs.
 - `--format, -f {json,geojson}`: output format (default: `json`).
 - `--geojson`: secondary export to `constants/routes.geojson`.
-- `--network-type {drive,drive_service}`: graph profile override (default uses `KRG_GRAPH_NETWORK_TYPE` or `drive`).
+- `--network-type {taxi,drive,drive_service}`: graph profile override (default uses `KRG_GRAPH_NETWORK_TYPE` or `taxi`).
 
 ### Strict street-walker (alternative builder)
 
