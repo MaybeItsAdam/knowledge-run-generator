@@ -29,7 +29,7 @@ from knowledge_run_generator.router import (
     route_reverse, LOOP_EXCESS_M,
 )
 from knowledge_run_generator.validator import (
-    check_constraint_order, check_route_sanity, check_run_shape,
+    BLUE_BOOK_RADIUS_ALLOWANCE_M, check_constraint_order, check_route_sanity, check_run_shape,
     check_turn_legality, load_turn_restrictions,
     validate_route, ValidationResult,
 )
@@ -833,6 +833,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             # between the same two nodes, ignoring the Blue Book sequence.
             run_config["shortest_m"] = shortest_legal_length(
                 G, start_node, end_node, prohibited_turns=run_prohibited_turns)
+            run_config["radius_allowance_m"] = BLUE_BOOK_RADIUS_ALLOWANCE_M.get(
+                int(run_id), 0.0)
             if route_nodes and len(route_nodes) >= 2:
                 waypoint_nodes = constraint_waypoints(
                     G, route_nodes, compiled.constraints)
@@ -906,7 +908,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 rev_route_nodes, run_prohibited_turns or set(),
                 exempted_turns=exempted_turns or None)
             rev_sane, rev_sanity, rev_sanity_reasons = check_route_sanity(
-                G, rev_route_nodes, end_node, start_node, shortest_m=rev_shortest_m)
+                G, rev_route_nodes, end_node, start_node, shortest_m=rev_shortest_m,
+                radius_allowance_m=run_config.get("radius_allowance_m") or 0.0)
             for reason in validation.sanity_reasons:
                 print(f"  [sanity-fail] AB {reason}")
             for reason in rev_sanity_reasons:

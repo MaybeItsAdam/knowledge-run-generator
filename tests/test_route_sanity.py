@@ -12,6 +12,7 @@ import unittest
 import networkx as nx
 
 from knowledge_run_generator.validator import (
+    BLUE_BOOK_RADIUS_ALLOWANCE_M,
     CHARING_CROSS,
     SIX_MILES_M,
     check_route_sanity,
@@ -84,6 +85,37 @@ class RouteSanityTests(unittest.TestCase):
         G = _chain([_north(r_km - 1), _north(r_km + 1)])
         ok, _, reasons = check_route_sanity(G, [0, 1], 0, 1)
         self.assertTrue(ok, reasons)
+
+    def test_a_listed_blue_book_run_may_leave_the_radius_by_its_allowance(self):
+        # Run 109 crosses Chiswick Bridge, 1.4 km outside: allowed only when
+        # the run carries its BLUE_BOOK_RADIUS_ALLOWANCE_M headroom.
+        r_km = SIX_MILES_M / 1000
+        G = _chain([_north(r_km - 1), _north(r_km + 1.4), _north(r_km - 0.5)])
+        ok, _, _ = check_route_sanity(G, [0, 1, 2], 0, 2)
+        self.assertFalse(ok)
+        ok, _, reasons = check_route_sanity(
+            G, [0, 1, 2], 0, 2,
+            radius_allowance_m=BLUE_BOOK_RADIUS_ALLOWANCE_M[109])
+        self.assertTrue(ok, reasons)
+
+    def test_the_allowance_is_bounded(self):
+        r_km = SIX_MILES_M / 1000
+        G = _chain([_north(r_km - 1), _north(r_km + 2.5), _north(r_km - 0.5)])
+        ok, _, reasons = check_route_sanity(
+            G, [0, 1, 2], 0, 2,
+            radius_allowance_m=BLUE_BOOK_RADIUS_ALLOWANCE_M[109])
+        self.assertFalse(ok)
+        self.assertTrue(any("six-mile radius" in r for r in reasons), reasons)
+
+    def test_only_the_four_known_runs_have_an_allowance(self):
+        self.assertEqual(sorted(BLUE_BOOK_RADIUS_ALLOWANCE_M), [37, 68, 109, 189])
+
+    def test_validate_route_passes_the_allowance_through(self):
+        r_km = SIX_MILES_M / 1000
+        G = _chain([_north(r_km - 1), _north(r_km + 1.4), _north(r_km - 0.5)])
+        result = validate_route(G, [0, 1, 2], 0, 2,
+                                config={"radius_allowance_m": 1500.0})
+        self.assertTrue(result.is_sane, result.sanity_reasons)
 
     def test_validate_route_fails_an_insane_route(self):
         G = _chain([_north(0), _north(3), _north(5), _north(2)])
