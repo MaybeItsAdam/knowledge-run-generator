@@ -120,6 +120,7 @@ constants/*
 !constants/london_boroughs.geojson
 !constants/yellow_badge_sectors.json
 !constants/osm_pois.json
+!constants/osm_access.json
 output/
 *.geojson
 !constants/london_boroughs.geojson

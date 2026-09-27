@@ -53,22 +53,6 @@
     51.5185,
     -0.1111
   ],
-  "ROLLS ROAD SE1": [
-    51.4921,
-    -0.0652
-  ],
-  "ROLLS ROAD": [
-    51.4921,
-    -0.0652
-  ],
-  "KNATCHBULL ROAD SE5": [
-    51.4658,
-    -0.0963
-  ],
-  "KNATCHBULL ROAD": [
-    51.4658,
-    -0.0963
-  ],
   "CANNON WHARF BUSINESS CENTRE SE8": {
     "lat": 51.4783,
     "lon": -0.02744
@@ -151,10 +135,6 @@
     51.4651,
     -0.1295
   ],
-  "ST JULIAN'S FARM ROAD SE27": [
-    51.4284,
-    -0.0945
-  ],
   "ST GEORGE'S HOSPITAL SW17": {
     "lat": 51.42464,
     "lon": -0.17506
@@ -185,18 +165,17 @@
     "lon": -0.11,
     "on_street": "LAMBETH ROAD"
   },
-  "IMPERIAL WAR MUSEUM SE1": [
-    51.4958,
-    -0.1088
-  ],
-  "BETHNAL GREEN B_R STATION E2": [
-    51.523,
-    -0.0533
-  ],
-  "BETHNAL GREEN STATION E2": [
-    51.523,
-    -0.0533
-  ],
+  "BETHNAL GREEN STATION E2": {
+    "lat": 51.524227,
+    "lon": -0.059305,
+    "on_street": "THREE COLTS LANE",
+    "note": "The Anki export (from a later Blue Book) names this 'Bethnal Green B.R. Station', the National Rail station, E2 6JL; TfL's 2011 wording does not say which. The old override was 460 m from both stations.",
+    "source": "OSM railway=station 'Bethnal Green' E2 6JL and its subway_entrance (51.524163,-0.059476); set-down node on Three Colts Lane 109436",
+    "place": [
+      51.52389,
+      -0.05959
+    ]
+  },
   "TWELVE TREES CRESCENT E3": [
     51.516,
     0.009
@@ -235,10 +214,6 @@
     "lon": -0.14022,
     "on_street": "ARGYLL STREET"
   },
-  "ST JOHN'S WOOD HIGH STREET NW8": [
-    51.5361,
-    -0.175
-  ],
   "BRIXTON MARKET SW9": {
     "lat": 51.46171,
     "lon": -0.11282,
@@ -308,10 +283,6 @@
   "WANDSWORTH ROAD STATION SW8": [
     51.47,
     -0.1384
-  ],
-  "CALEDONIAN ROAD STATION N7": [
-    51.5423,
-    -0.1178
   ],
   "HIGHBURY FIELDS N5": [
     51.5502,
@@ -442,7 +413,6 @@
     "lon": 0.00054,
     "on_street": "GREAT EASTERN ROAD"
   },
-  "ARMOURY HOUSE EC1": "The HAC (Honourable Artillery Company) - Armoury House",
   "CENTRAL CRIMINAL COURT EC4": "Central Criminal Court - The Old Bailey",
   "GLENWORTH AVENUE E14": "CANARY WHARF COLLEGE, GLENWORTH",
   "HARLESDEN HIGH STREET NW10": "HIGH STREET HARLESDEN NW10",
@@ -482,7 +452,6 @@
     "on_street": "SHAFTESBURY AVENUE"
   },
   "THREE KINGS YARD W1": "Three Kings Yard Mayfair",
-  "VICTORIA COACH STATION SW1": "Victoria Coach Station Arrivals + Taxi Rank",
   "LINFORD CHRISTIE STADIUM W12": {
     "lat": 51.52082,
     "lon": -0.22904
@@ -793,5 +762,214 @@
   "GOODGE STREET STATION W1": {
     "lat": 51.52052,
     "lon": -0.13465
+  },
+  "ALEXANDRA PALACE N22": {
+    "lat": 51.594904,
+    "lon": -0.132057,
+    "on_street": "THE AVENUE",
+    "note": "Set down at the west end of the palace where The Avenue meets the palace road; Alexandra Palace Way is not in the drive graph. The Points List point is the Great Hall roof, 110 m from any road.",
+    "source": "OSM amenity=exhibition_centre 'Alexandra Palace' (Nominatim 51.59435,-0.13064); set-down node on The Avenue 8936134460",
+    "place": [
+      51.59435,
+      -0.13064
+    ]
+  },
+  "ARMOURY HOUSE EC1": {
+    "lat": 51.523237,
+    "lon": -0.087303,
+    "on_street": "CITY ROAD",
+    "note": "Honourable Artillery Company, Armoury House, City Road EC1Y 2BQ. Set down on City Road at the HAC. Was unresolved: the Points List names it 'The HAC (Honourable Artillery Company) - Armoury House', and the old shipped point was 3.2 km away in WC2.",
+    "source": "OSM building 'Armoury House' EC1Y (Nominatim 51.52301,-0.08850); set-down node on City Road 110150",
+    "place": [
+      51.52301,
+      -0.0885
+    ]
+  },
+  "BRITISH MUSEUM WC1": {
+    "lat": 51.518229,
+    "lon": -0.126156,
+    "on_street": "GREAT RUSSELL STREET",
+    "note": "Main gate is on Great Russell Street. The museum's point is the Great Court, 134 m from a road.",
+    "source": "OSM tourism=museum 'British Museum' WC1B 3DG (Nominatim 51.51931,-0.12671); set-down node on Great Russell Street 107852",
+    "place": [
+      51.51931,
+      -0.12671
+    ]
+  },
+  "CANONBURY STATION N1": {
+    "lat": 51.54922,
+    "lon": -0.091492,
+    "on_street": "WALLACE ROAD",
+    "note": "The station entrance is on Wallace Road. The shipped point was 1.9 km away in N4.",
+    "source": "OSM railway=station 'Canonbury' N1 2PG and its railway=subway_entrance (51.548699,-0.092064); set-down node on Wallace Road 2143540157",
+    "place": [
+      51.54856,
+      -0.09302
+    ]
+  },
+  "EAST DULWICH STATION SE22": {
+    "lat": 51.461646,
+    "lon": -0.079942,
+    "on_street": "GROVE VALE",
+    "note": "The station entrance is on Grove Vale at the foot of Dog Kennel Hill; its point is on the platforms, 71 m from a road node.",
+    "source": "OSM railway=station 'East Dulwich' SE22 8PL; set-down node on Grove Vale 29713659",
+    "place": [
+      51.46104,
+      -0.0808
+    ]
+  },
+  "GOLDERS GREEN STATION NW11": {
+    "lat": 51.571806,
+    "lon": -0.195206,
+    "on_street": "NORTH END ROAD",
+    "note": "Set down on North End Road at the station forecourt (the bus station is not a cab road).",
+    "source": "OSM railway=station 'Golders Green' NW11 7PL and its subway_entrance (51.572106,-0.194443); set-down node at North End Road / Finchley Road 2258490789",
+    "place": [
+      51.5723,
+      -0.19403
+    ]
+  },
+  "HACKNEY WICK STATION E9": {
+    "lat": 51.542927,
+    "lon": -0.025324,
+    "on_street": "WHITE POST LANE",
+    "note": "The station's entrances are on the underpass between Wallis Road and White Post Lane; White Post Lane is the nearer drivable road to them.",
+    "source": "OSM railway=station 'Hackney Wick' E9 5XJ and its four entrance nodes (51.5433,-0.0241); set-down node on White Post Lane 33057014",
+    "place": [
+      51.54344,
+      -0.02415
+    ]
+  },
+  "IMPERIAL WAR MUSEUM SE1": {
+    "lat": 51.496815,
+    "lon": -0.11,
+    "on_street": "LAMBETH ROAD",
+    "note": "The museum's gate is on Lambeth Road; the old override (51.4958,-0.1088) was the building, 140 m from a road node.",
+    "source": "OSM entrance nodes of 'Imperial War Museum' (51.495777,-0.109003; 51.49632,-0.10859); set-down node on Lambeth Road 3314367620",
+    "place": [
+      51.49578,
+      -0.109
+    ]
+  },
+  "LADYWELL STATION SE13": {
+    "lat": 51.456628,
+    "lon": -0.019641,
+    "on_street": "LADYWELL ROAD",
+    "note": "The station entrance is on Ladywell Road by the level crossing.",
+    "source": "OSM railway=station 'Ladywell' SE13 7XA; set-down node on Ladywell Road 26471652",
+    "place": [
+      51.45603,
+      -0.01919
+    ]
+  },
+  "LEWISHAM STATION SE13": {
+    "lat": 51.464557,
+    "lon": -0.013768,
+    "on_street": "LOAMPIT VALE",
+    "note": "The station approach leaves Loampit Vale; the approach itself is not a drive road in the graph. Station point is 122 m from the nearest node.",
+    "source": "OSM railway=station 'Lewisham' SE13 7RY and its entrance (51.465566,-0.013785); set-down node on Loampit Vale 13821584",
+    "place": [
+      51.46564,
+      -0.01396
+    ]
+  },
+  "NEW CROSS STATION SE14": {
+    "lat": 51.47742,
+    "lon": -0.032293,
+    "on_street": "AMERSHAM VALE",
+    "note": "The station entrance is on Amersham Vale, off New Cross Road.",
+    "source": "OSM railway=station 'New Cross' SE14 6LA and its entrance (51.47626,-0.032119); set-down node on Amersham Vale 10721897538",
+    "place": [
+      51.47637,
+      -0.03262
+    ]
+  },
+  "SOUTHWARK CROWN COURT SE1": {
+    "lat": 51.505841,
+    "lon": -0.082811,
+    "on_street": "BATTLE BRIDGE LANE",
+    "note": "1 English Grounds, SE1 2HU, reached by Battle Bridge Lane off Tooley Street. The shipped point was 1.1 km away in the City (EC2).",
+    "source": "OSM amenity=courthouse 'Southwark Crown Court' SE1 2AF (Nominatim 51.50562,-0.08215); set-down node on Battle Bridge Lane 676082488",
+    "place": [
+      51.50562,
+      -0.08215
+    ]
+  },
+  "SYDENHAM HILL STATION SE21": {
+    "lat": 51.433175,
+    "lon": -0.078988,
+    "on_street": "COLLEGE ROAD",
+    "note": "The station entrance is on College Road; the station sits in a cutting 102 m from a road node.",
+    "source": "OSM railway=station 'Sydenham Hill' SE21 7NA; set-down node on College Road 7560775976",
+    "place": [
+      51.43261,
+      -0.08015
+    ]
+  },
+  "WANDSWORTH COMMON STATION SW12": {
+    "lat": 51.446521,
+    "lon": -0.165285,
+    "on_street": "NIGHTINGALE LANE",
+    "note": "Set down on Nightingale Lane by the station. The OSM harvest's 'WANDSWORTH COMMON' is the common, which the shipped build used (1 km off).",
+    "source": "OSM railway=station 'Wandsworth Common' SW12 8NJ; set-down node on Nightingale Lane 11079523",
+    "place": [
+      51.44612,
+      -0.16352
+    ]
+  },
+  "VICTORIA COACH STATION SW1": {
+    "lat": 51.492525,
+    "lon": -0.147804,
+    "on_street": "BUCKINGHAM PALACE ROAD",
+    "note": "Main (departures) building, 164 Buckingham Palace Road. Was unresolved; the Points List only names 'Arrivals + Taxi Rank' and 'Departures'.",
+    "source": "OSM building=transportation 'Victoria Coach Station' SW1W 9RB (Nominatim 51.49219,-0.14849); set-down node on Buckingham Palace Road 18129881",
+    "place": [
+      51.49219,
+      -0.14849
+    ]
+  },
+  "MINISTRY OF DEFENCE SW1": {
+    "lat": 51.504935,
+    "lon": -0.124836,
+    "on_street": "HORSE GUARDS AVENUE",
+    "note": "MOD Main Building; its entrance is on Horse Guards Avenue. Was unresolved: the Points List names it 'Ministry of Defence (MOD)'.",
+    "source": "OSM office 'Ministry of Defence' SW1A 2HB (Nominatim 51.50400,-0.12486); set-down node on Horse Guards Avenue 8916255",
+    "place": [
+      51.504,
+      -0.12486
+    ]
+  },
+  "BARBICAN EC2": {
+    "lat": 51.521014,
+    "lon": -0.092423,
+    "on_street": "SILK STREET",
+    "note": "'Barbican, EC2' is the Barbican Centre (EC2Y), not Barbican station (EC1M), which the shipped point used. The Centre's main entrance is on Silk Street.",
+    "source": "OSM amenity=arts_centre 'Barbican Centre' EC2Y 8DS; set-down node on Silk Street 6855696503",
+    "place": [
+      51.52018,
+      -0.0935
+    ]
+  },
+  "LONDON BRIDGE STATION SE1": {
+    "lat": 51.50583,
+    "lon": -0.08635,
+    "on_street": "TOOLEY STREET",
+    "note": "The main concourse entrance is on Tooley Street; the station's point is on the platforms, 53 m from a road node. Resolved through the street tier to the bridge itself (EC4) before station names were barred from word-dropping.",
+    "source": "OSM railway=station 'London Bridge' SE1 9SP (node 4290857012); set-down node on Tooley Street 3431443",
+    "place": [
+      51.50488,
+      -0.08515
+    ]
+  },
+  "FENCHURCH STREET STATION EC3": {
+    "lat": 51.511493,
+    "lon": -0.079495,
+    "on_street": "FENCHURCH PLACE",
+    "note": "The main entrance is on Fenchurch Place, at the west end of the station; OSM's station point is on the platforms at the east end, which set down on Crosswall behind the station and made run 220's route 2.1 times the shortest legal one.",
+    "source": "OSM railway=station 'Fenchurch Street' EC3; main entrance nodes on Fenchurch Place; set-down node on Fenchurch Place 1547392771",
+    "place": [
+      51.51133,
+      -0.07742
+    ]
   }
 }

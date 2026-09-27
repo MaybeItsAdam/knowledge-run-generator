@@ -218,6 +218,32 @@ def parse_overpass(payload: dict) -> dict[str, dict]:
     return out
 
 
+def merge_chunk(all_pois: dict[str, dict], chunk: dict[str, dict]) -> None:
+    """Fold one tag group's harvest into *all_pois*.
+
+    The first writer stays the primary record, as within a chunk; a record of
+    a *different kind* joins its ``_others``. Plain ``setdefault`` dropped
+    those, so "LONDON BRIDGE" kept only the bridge (a tourism attraction,
+    harvested first) and a station query could never find the station.
+    """
+    for name, record in chunk.items():
+        primary = all_pois.get(name)
+        if primary is None:
+            all_pois[name] = record
+            continue
+        candidates = [record] + list(record.get("_others") or [])
+        for cand in candidates:
+            cand = {k: v for k, v in cand.items() if k != "_others"}
+            others = primary.get("_others") or []
+            if cand.get("kind") == primary.get("kind"):
+                continue
+            if any(o.get("kind") == cand.get("kind") for o in others):
+                continue
+            if len(others) >= MAX_ALTERNATES:
+                break
+            primary.setdefault("_others", others).append(cand)
+
+
 def fetch_pois(
     bbox: tuple[float, float, float, float] = LONDON_BBOX,
     cache_path: Path | str | None = DEFAULT_CACHE_PATH,
@@ -267,9 +293,7 @@ def fetch_pois(
             query = _build_query(bbox, groups=(group,))
             payload = _fetch_overpass(query, overpass_url)
             chunk = parse_overpass(payload)
-            # curated-override semantics apply across chunks: first-writer wins.
-            for name, record in chunk.items():
-                all_pois.setdefault(name, record)
+            merge_chunk(all_pois, chunk)
             if progress:
                 print(f"    {len(chunk)} named", flush=True)
         except Exception as exc:
