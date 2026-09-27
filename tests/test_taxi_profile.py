@@ -13,14 +13,17 @@ import networkx as nx
 from shapely.geometry import LineString
 
 from knowledge_run_generator.taxi_profile import (
+    TEMPORARY_CLOSURES,
     TaxiRules,
     apply_taxi_rules,
     barrier_blocks_taxi,
     describe_violation,
     restriction_exempts_taxi,
     resolve_taxi_access,
+    route_notices,
     taxi_contraflow,
     taxi_way_access,
+    temporary_closure,
 )
 from knowledge_run_generator.validator import _build_prohibited_set
 
@@ -252,6 +255,71 @@ class RouteCheckTests(unittest.TestCase):
         self.assertEqual(rules.check_route(G, [2, 3, 4]), [])
         v = rules.check_route(G, [1, 2, 3, 4])
         self.assertEqual([x["kind"] for x in v], ["destination_through"])
+
+
+class TemporaryClosureTests(unittest.TestCase):
+    """A temporary closure stays open in the graph and puts a notice on the
+    route, so it never permanently reroutes a run or moves its endpoint."""
+
+    ALBERT = 591291850  # the south span of Albert Bridge, access=no
+
+    def _graph(self):
+        G = nx.MultiDiGraph()
+        for n in range(1, 5):
+            G.add_node(n, x=-0.166 - n * 0.0005, y=51.48 + n * 0.0005)
+        # OSM tags of way 591291850 as of 2026-09-27: plain access=no.
+        G.add_edge(1, 2, length=50.0, osmid=self.ALBERT, highway="primary",
+                   name="Albert Bridge", access="no")
+        G.add_edge(2, 1, length=50.0, osmid=self.ALBERT, highway="primary",
+                   name="Albert Bridge", access="no")
+        G.add_edge(2, 3, length=80.0, osmid=[4000, 4001], highway="primary",
+                   name="Chelsea Embankment")
+        G.add_edge(3, 4, length=90.0, osmid=5000, highway="primary",
+                   name="Other Bridge", access="no")
+        return G
+
+    def test_albert_bridge_is_listed_with_a_note(self):
+        c = temporary_closure(self.ALBERT)
+        self.assertIsNotNone(c)
+        self.assertEqual(c.name, "Albert Bridge")
+        self.assertEqual(c.notice,
+                         "Albert Bridge is temporarily closed. The route shown is the normal one.")
+        self.assertIn("Remove once OSM reopens it", c.note)
+        self.assertIsNone(temporary_closure(5000))
+        self.assertIsNone(temporary_closure(None))
+
+    def test_hammersmith_bridge_is_not_temporary(self):
+        # Long-running: routes that need it ship crow-flies instead.
+        for c in TEMPORARY_CLOSURES:
+            self.assertNotIn("hammersmith", c.name.lower())
+        for wid in (7587403, 314914065):
+            self.assertIsNone(temporary_closure(wid))
+
+    def test_notices_are_app_safe(self):
+        for c in TEMPORARY_CLOSURES:
+            self.assertTrue(c.note)
+            for text in (c.notice, c.note):
+                self.assertNotIn("\u2014", text)
+
+    def test_graph_keeps_it_open_and_records_it(self):
+        G = self._graph()
+        sidecar = apply_taxi_rules(G)
+        self.assertTrue(G.has_edge(1, 2) and G.has_edge(2, 1))
+        self.assertNotIn(str(self.ALBERT), sidecar["closed_ways"])
+        rec = sidecar["temporary_closures"][str(self.ALBERT)]
+        self.assertEqual((rec["tagged"], rec["reason"]), ("closed", "access=no"))
+        # An ordinary access=no way is still closed.
+        self.assertFalse(G.has_edge(3, 4))
+        self.assertIn("5000", sidecar["closed_ways"])
+
+    def test_route_over_it_is_legal_and_carries_the_notice(self):
+        rules = TaxiRules.from_sidecar(apply_taxi_rules(self._graph()))
+        G = self._graph()
+        self.assertEqual(rules.check_route(G, [1, 2, 3]), [])
+        self.assertEqual(route_notices(G, [1, 2, 3, 2, 1]),
+                         ["Albert Bridge is temporarily closed. The route shown is the normal one."])
+        self.assertEqual(route_notices(G, [2, 3]), [])
+        self.assertEqual(route_notices(G, []), [])
 
 
 if __name__ == "__main__":

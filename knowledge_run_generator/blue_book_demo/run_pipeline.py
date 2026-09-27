@@ -33,6 +33,7 @@ from knowledge_run_generator.router import (
 from knowledge_run_generator.route_source import (
     BLUE_BOOK, CROW_FLIES, blue_book_failure_reason,
 )
+from knowledge_run_generator.taxi_profile import route_notices
 from knowledge_run_generator.validator import (
     BLUE_BOOK_RADIUS_ALLOWANCE_M, check_constraint_order, check_route_sanity, check_run_shape,
     check_turn_legality, load_turn_restrictions,
@@ -1092,6 +1093,14 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 n = G.nodes[nid]
                 waypoints_lonlat.append([n["x"], n["y"]])
 
+            # A route over a temporarily closed way (taxi_profile.
+            # TEMPORARY_CLOSURES) keeps its normal route and says so.
+            notices = route_notices(G, route_nodes)
+            for n in route_notices(G, rev_route_nodes or []):
+                if n not in notices:
+                    notices.append(n)
+            route_notice = " ".join(notices) or None
+
             # ----- Build JSON object (same schema as before) -----
             run_obj = {
                 "id": run_id,
@@ -1101,6 +1110,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 # today (route_source_reason says why, in plain English).
                 "route_source": route_source,
                 "route_source_reason": route_source_reason,
+                # Plain-English notice for a route that crosses a temporary
+                # closure, e.g. "Albert Bridge is temporarily closed. The
+                # route shown is the normal one." None otherwise.
+                "route_notice": route_notice,
                 "waypoints": waypoints_lonlat,
                 "start": {
                     "name": origin,
@@ -1210,6 +1223,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 "route_source": route_source,
                 "route_source_reason": route_source_reason,
                 "rev_route_source": rev_route_source,
+                "route_notice": route_notice,
                 "taxi_legal": taxi_legal,
                 "taxi_violations": fwd_taxi_v,
                 "rev_taxi_violations": rev_taxi_v,

@@ -57,7 +57,15 @@ Ways
       314914065, checked 2026-09), and the Castelnau approach the same way.
       It is not downloaded (cycleway), and would be closed by
       ``motor_vehicle=no`` if it were. No special case is needed; a unit test
-      pins the real tags.
+      pins the real tags. It is long-running, so it is deliberately **not**
+      a temporary closure (below): runs that need it ship crow-flies.
+    * Temporary closures (:data:`TEMPORARY_CLOSURES`): OSM ways closed only
+      for a while (a bridge shut for repairs) are treated as **open**, because
+      a temporary closure must not permanently reroute a run or move its
+      endpoint. A run whose shipped route crosses one carries a
+      ``route_notice`` saying so ("Albert Bridge is temporarily closed. The
+      route shown is the normal one."). Each entry records why it is there
+      and when to remove it: once OSM reopens the way, delete the entry.
 
 Nodes
     A ``barrier`` node in :data:`BLOCKING_BARRIERS` (bollard, bus_trap, block,
@@ -126,6 +134,74 @@ WAY_TAGS = ("access", "motor_vehicle", "motorcar", "vehicle", "psv", "taxi",
             "bus", "oneway:psv", "oneway:taxi", "oneway:bus")
 NODE_TAGS = ("barrier", "bollard", "access", "motor_vehicle", "motorcar",
              "vehicle", "psv", "taxi", "bus")
+
+
+@dataclass(frozen=True)
+class TemporaryClosure:
+    """A closure OSM maps with plain (unconditional) access tags, but which
+    is temporary. The taxi graph treats its ways as open, and a route that
+    crosses them carries :attr:`notice`. App-facing strings: no em dashes."""
+
+    name: str
+    ways: tuple
+    notice: str
+    note: str
+
+
+TEMPORARY_CLOSURES: tuple = (
+    TemporaryClosure(
+        name="Albert Bridge",
+        # Every way named Albert Bridge tagged access=no, checked against
+        # the OSM API on 2026-09-27 (edited in changesets 178515756 and
+        # later, 2026-02-13 onwards). No barrier nodes were added with them.
+        ways=(23017722, 247573028, 326272665, 536751562, 591291850,
+              591291853, 591291859, 1188809166, 1259294888, 1259294890,
+              1259294891, 1477849562, 1477849563, 1477849584, 1477849587,
+              1477849588),
+        notice="Albert Bridge is temporarily closed. The route shown is the normal one.",
+        note=("Closed to motor vehicles since 2026-02-07 for repairs (RBKC), "
+              "reopening expected in 2027. Temporarily closed as of 2026-09, "
+              "per the user; treat as open. Remove once OSM reopens it."),
+    ),
+)
+
+_TEMPORARY_BY_WAY = {int(w): c for c in TEMPORARY_CLOSURES for w in c.ways}
+
+
+def temporary_closure(way_id) -> "TemporaryClosure | None":
+    """The temporary closure an OSM way belongs to, if any."""
+    try:
+        return _TEMPORARY_BY_WAY.get(int(way_id))
+    except (TypeError, ValueError):
+        return None
+
+
+def _edge_osmids(data) -> set:
+    osmids = data.get("osmid")
+    osmids = osmids if isinstance(osmids, list) else [osmids]
+    ids = set()
+    for o in osmids:
+        try:
+            ids.add(int(o))
+        except (TypeError, ValueError):
+            pass
+    return ids
+
+
+def route_notices(G, route_nodes) -> list[str]:
+    """The notices of every temporary closure a route crosses, in route
+    order, each once."""
+    out: list[str] = []
+    for u, v in zip(route_nodes or [], (route_nodes or [])[1:]):
+        bundle = G.get_edge_data(u, v) or {}
+        if not bundle:
+            continue
+        data = min(bundle.values(), key=lambda d: d.get("length", float("inf")))
+        for wid in sorted(_edge_osmids(data)):
+            c = temporary_closure(wid)
+            if c is not None and c.notice not in out:
+                out.append(c.notice)
+    return out
 
 
 def _values(raw) -> list[str]:
@@ -226,7 +302,8 @@ def restriction_exempts_taxi(tags: dict) -> bool:
 # Graph build
 # ---------------------------------------------------------------------------
 
-TAXI_GRAPH_VERSION = 1
+# v2: temporary closures (Albert Bridge) are kept open.
+TAXI_GRAPH_VERSION = 2
 SIDECAR_SUFFIX = ".taxi_rules.json"
 
 _ROAD_RE = "|".join(ROAD_HIGHWAYS)
@@ -272,12 +349,18 @@ def apply_taxi_rules(G) -> dict:
     destination_ways: dict = {}
     contraflow_ways: dict = {}
     barriers: dict = {}
+    temporary: dict = {}
 
-    # 1. Way access.
+    # 1. Way access. A temporary closure is kept open (see the docstring).
     drop = []
     for u, v, k, data in G.edges(keys=True, data=True):
         verdict, why = taxi_way_access(_edge_tags(data))
         wid = _first_osmid(data)
+        closure = temporary_closure(wid)
+        if closure is not None:
+            temporary[str(wid)] = {"name": closure.name, "notice": closure.notice,
+                                   "tagged": verdict, "reason": why}
+            verdict = "open"
         if verdict == "closed":
             drop.append((u, v, k))
             if wid is not None:
@@ -336,6 +419,7 @@ def apply_taxi_rules(G) -> dict:
         "destination_ways": destination_ways,
         "contraflow_ways": contraflow_ways,
         "barriers": barriers,
+        "temporary_closures": temporary,
     }
 
 
