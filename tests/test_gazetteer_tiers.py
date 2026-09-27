@@ -154,7 +154,10 @@ class StreetFallbackTests(unittest.TestCase):
         self.assertEqual(entry.source, "street")
         self.assertIn(entry.snapped_node, range(100, 104))
 
-    def test_plausible_geocode_is_kept(self):
+    def test_street_name_prefers_the_street_even_over_a_plausible_geocode(self):
+        # A name that is a street means the street. A Points List geocode of it
+        # is a rooftop somewhere along it at best, and at worst the W1 squares
+        # that all collapsed onto one point in Kennington.
         gz = Gazetteer(
             alias_index=self.alias_index,
             knowledge_pois=self._n1_points(**{
@@ -162,7 +165,19 @@ class StreetFallbackTests(unittest.TestCase):
                                    "postal_district": "N1"},
             }),
         )
-        self.assertEqual(gz.resolve("HIGH STREET N1", self.G).source, "knowledge_poi")
+        entry = gz.resolve("HIGH STREET N1", self.G)
+        self.assertEqual(entry.source, "street")
+        self.assertIn(entry.snapped_node, range(100, 104))
+
+    def test_non_street_point_keeps_its_plausible_geocode(self):
+        gz = Gazetteer(
+            alias_index=self.alias_index,
+            knowledge_pois=self._n1_points(**{
+                "ALMEIDA THEATRE N1": {"coordinates": [-0.1005, 51.540],
+                                       "postal_district": "N1"},
+            }),
+        )
+        self.assertEqual(gz.resolve("ALMEIDA THEATRE N1", self.G).source, "knowledge_poi")
 
     def test_curated_override_is_never_second_guessed(self):
         gz = Gazetteer(

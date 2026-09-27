@@ -1,0 +1,51 @@
+{
+  "_comment": "TfL Annex B display name -> the name the gazetteer resolves it by. Only for TfL wording that names a real place under a different spelling or form; the run still displays TfL's name. Every entry says why.",
+  "HARRINGAY GREENS LANES STATION N4": {
+    "resolve_as": "HARRINGAY GREEN LANES STATION N4",
+    "why": "TfL typo. The Overground station on Green Lanes is Harringay Green Lanes (OSM railway=station name)."
+  },
+  "MYDDLETON SQUARE EC1": {
+    "resolve_as": "MYDDELTON SQUARE EC1",
+    "why": "TfL typo. The Clerkenwell square is Myddelton Square (street signs, OSM highway name)."
+  },
+  "HONOUR OAK PARK SE23": {
+    "resolve_as": "HONOR OAK PARK SE23",
+    "why": "TfL spelling. The SE23 road is Honor Oak Park (OSM highway name, Royal Mail)."
+  },
+  "THOMAS MOORE STREET E1": {
+    "resolve_as": "THOMAS MORE STREET E1",
+    "why": "TfL typo. The Wapping street is Thomas More Street (OSM highway name)."
+  },
+  "LANDSDOWNE WAY SW8": {
+    "resolve_as": "LANSDOWNE WAY SW8",
+    "why": "TfL typo. The Stockwell road is Lansdowne Way (OSM highway name)."
+  },
+  "CONNINGHAM ROAD W12": {
+    "resolve_as": "CONINGHAM ROAD W12",
+    "why": "TfL typo. The Shepherd's Bush road is Coningham Road (OSM highway name)."
+  },
+  "HIGH STREET NW10": {
+    "resolve_as": "HARLESDEN HIGH STREET NW10",
+    "why": "NW10 has more than one High Street; the Anki export of the same run names this one Harlesden High Street."
+  },
+  "HIGH STREET N8": {
+    "resolve_as": "HIGH STREET, HORNSEY N8",
+    "why": "The Anki export of the same run names this one Hornsey High Street (the N8 High Street)."
+  },
+  "WEST SIDE CLAPHAM COMMON SW4": {
+    "resolve_as": "CLAPHAM COMMON WEST SIDE SW4",
+    "why": "Word order. OSM names the road Clapham Common West Side."
+  },
+  "HANOVER GATE, REGENT'S PARK NW1": {
+    "resolve_as": "HANOVER GATE NW1",
+    "why": "TfL qualifies the gate with its park; the point is Hanover Gate itself."
+  },
+  "INNER CIRCLE, REGENT'S PARK NW1": {
+    "resolve_as": "INNER CIRCLE NW1",
+    "why": "TfL qualifies the road with its park; OSM names the road Inner Circle."
+  },
+  "CHELSEA & WESTMINSTER HOSPITAL SW10": {
+    "resolve_as": "CHELSEA AND WESTMINSTER HOSPITAL SW10",
+    "why": "Ampersand. The curated override and OSM spell out 'and'."
+  }
+}

@@ -14,6 +14,24 @@ reported but non-gating; why both ordered metrics are tracked).
 - Override graph profile with `KRG_GRAPH_NETWORK_TYPE` or `--network-type` in the Blue Book pipeline.
   - Supported values: `drive`, `drive_service`.
 
+## Run Names and Endpoints
+- TfL Annex B (`blue_book_demo/tfl_blue_book_annex_b.txt`, vendored with its
+  sha256) is the run list: numbers, names, districts and order. The Anki
+  export only supplies the street directions; `annex_b.py` refuses a build
+  whose run ids differ. A TfL name that the data knows under another spelling
+  resolves through `annex_b_geocode_names.json` (each entry says why); the run
+  still displays TfL's name.
+- Endpoint resolution order: curated overrides, then (stations) OSM stations
+  before the Points List, then the Points List, then the street tier. A name
+  that *is* a street resolves to the street (the stretch nearest its district).
+- Area endpoints (stations, parks, museums) set down at a way in from
+  `constants/osm_access.json` (`krg osm-access`), not the road nearest their
+  centre.
+- Build guards: two different names on one coordinate, or names that differ
+  from Annex B, fail `krg generate all` and `promote_to_app.py`.
+- `poi_overrides.json` is for genuinely ambiguous places only. Every new entry
+  carries `note` and `source`.
+
 ## Web App Expectations
 - Sidebar is file-hierarchy-first.
 - Top bar shows selected run name.
@@ -60,17 +78,16 @@ reported but non-gating; why both ordered metrics are tracked).
   is a hard gap and fails the run. The reverse run (not prescribed) also
   repairs leg loops and falls back to the shortest legal route when the
   reversed sequence stays over budget (`rev_fallback`).
-- Current baseline (`krg regression snapshot`, 320 runs, fresh graph): 281
-  `passed`, mean `ordered_coverage` 0.991, mean `strict_ordered` 0.972,
-  292/320 runs fully in Blue Book order, **0 legality failures** (either
-  direction), 17 sanity failures, 15 preflight failures. Routing mode splits
-  292 `ordered_strict` / 27 `ordered_relaxed` / 1 `shortest_path`.
-- What is left: the 17 sanity failures are mostly endpoints kilometres from
-  the start of their Blue Book sequence (150, 156, 166, 251, 300, 305, 319,
-  56, 72, 14) and Blue Book runs that cross just outside the radius (37, 68,
-  109, 189 — Chiswick Bridge); 27 runs carry a loop demotion (Blue Book
-  order undrivable without a lap on today's OSM); directness (`is_direct:
-  false`, triage only) is 76.
+- Current baseline (`krg regression snapshot`, 320 runs, fresh graph): 291
+  `passed`, mean `ordered_coverage` 0.992, mean `strict_ordered` 0.976,
+  295/320 runs fully in Blue Book order, **0 legality failures** (either
+  direction), 6 sanity failures, 0 preflight failures. Routing mode splits
+  295 `ordered_strict` / 24 `ordered_relaxed` / 1 `shortest_path`.
+- What is left: the 6 sanity failures are Blue Book runs that cross just
+  outside the radius (37, 68, 109, 189 — Chiswick Bridge), run 56 (TfL's
+  "Spitalfields Market, E10" is in E1) and run 258; 24 runs carry a loop
+  demotion (Blue Book order undrivable without a lap on today's OSM);
+  directness (`is_direct: false`, triage only) is 54.
 - Step text is not a fidelity metric. `ordered_coverage` / `strict_ordered` are
   computed from the graph edges the route traverses (`_route_edge_names`), not
   from `route.steps`, so changing how the call is worded cannot move them.

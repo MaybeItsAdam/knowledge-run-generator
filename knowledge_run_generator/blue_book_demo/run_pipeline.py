@@ -49,8 +49,10 @@ from knowledge_run_generator.gazetteer import (
     DEFAULT_KNOWLEDGE_POIS_PATH, Gazetteer, load_knowledge_pois, preflight_run,
 )
 from knowledge_run_generator.cache import cache_dir as krg_cache_dir
+from knowledge_run_generator.annex_b import annex_titles, geocode_name
 from knowledge_run_generator.junctions import build_junction_index
 from knowledge_run_generator.osm_pois import load_cached_pois
+from knowledge_run_generator.osm_access import load_access
 from knowledge_run_generator.regression import hash_nodes
 from knowledge_run_generator import caller
 
@@ -261,10 +263,27 @@ def parse_intermediary_lines(path):
     return run_titles, run_lines
 
 
+def canonical_run_titles(anki_titles):
+    """Run titles from TfL Annex B, the canonical list.
+
+    The Anki export still supplies each run's street sequence (Annex B lists
+    endpoints only), so the two must agree on which runs exist. Names,
+    districts and order are TfL's; where the Anki title differs, TfL wins.
+    """
+    titles = annex_titles()
+    if set(anki_titles) != set(titles):
+        raise ValueError(
+            "Anki run export and TfL Annex B disagree on run ids: "
+            f"only in Anki {sorted(set(anki_titles) - set(titles))[:10]}, "
+            f"only in Annex B {sorted(set(titles) - set(anki_titles))[:10]}"
+        )
+    return titles
+
+
 def parse_intermediary_file(path):
     """
     Read ``blue-book-runs-intermediatery.txt`` and return:
-      - run_titles: dict  {run_id: (origin, destination)}
+      - run_titles: dict  {run_id: (origin, destination)}, from TfL Annex B
       - intermediary_runs: dict  {run_id: [street_name, ...]}
 
     Roundabout markers (``ROUNDABOUT``, ``R/BOUT``, ``<NAME> ROUNDABOUT``) are
@@ -273,12 +292,12 @@ def parse_intermediary_file(path):
     constraint compiler consumes :func:`parse_intermediary_lines` instead,
     where they survive as NODE-constraint material.
     """
-    run_titles, run_lines = parse_intermediary_lines(path)
+    anki_titles, run_lines = parse_intermediary_lines(path)
     intermediary_runs = {
         run_id: [s for s in seq if not is_roundabout_line(s)]
         for run_id, seq in run_lines.items()
     }
-    return run_titles, intermediary_runs
+    return canonical_run_titles(anki_titles), intermediary_runs
 
 
 _spelling_fixes_cache = None
@@ -446,7 +465,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         print(f"Error: {inter_file} not found.")
         return
 
-    run_titles, run_lines = parse_intermediary_lines(inter_file)
+    anki_titles, run_lines = parse_intermediary_lines(inter_file)
+    run_titles = canonical_run_titles(anki_titles)
     # Street-only view for the legacy discount router, coverage and preflight;
     # the constraint compiler consumes the full line sequence.
     intermediary_runs = {
@@ -560,11 +580,28 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         print("  No knowledge_pois.json found — endpoints will fall back to the "
               "geocoder. Run `krg generate pois` first for a faster, offline resolve.")
 
+    # Station entrances and park gates (``krg osm-access``): where a cab sets
+    # down at a station, park or museum, rather than the road nearest its
+    # centre. Required like the POI harvest, for the same reason.
+    access = load_access(
+        os.environ.get("KRG_OSM_ACCESS"),
+        output_file.parent / "osm_access.json",
+        PROJECT_ROOT / "constants" / "osm_access.json",
+        cache_dir / "osm_access.json",
+    )
+    if not access and not os.environ.get("KRG_ALLOW_NO_OSM"):
+        raise RuntimeError(
+            "No OSM access-point harvest found: station and park endpoints "
+            "would snap to the road nearest their centre. Run `krg osm-access` "
+            "first (or set KRG_ALLOW_NO_OSM=1 to proceed anyway)."
+        )
+
     gazetteer = Gazetteer(
         overrides=poi_overrides,
         alias_index=alias_index,
         osm_pois=osm_pois,
         knowledge_pois=knowledge_pois,
+        access=access,
     )
 
     # Run-specific patches from local demo directory.
@@ -597,8 +634,11 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         print(f"Processing Run {run_id}: {origin} -> {destination}")
 
         # ----- Geocode with snapping -----
-        start = geocode_and_snap(origin, G, poi_overrides, gazetteer=gazetteer)
-        end = geocode_and_snap(destination, G, poi_overrides, gazetteer=gazetteer)
+        # Displayed names are TfL's; a few TfL spellings resolve by another
+        # name (annex_b_geocode_names.json says which and why).
+        origin_key, destination_key = geocode_name(origin), geocode_name(destination)
+        start = geocode_and_snap(origin_key, G, poi_overrides, gazetteer=gazetteer)
+        end = geocode_and_snap(destination_key, G, poi_overrides, gazetteer=gazetteer)
 
         if not start or not end:
             print(f"  SKIP: Failed to geocode Run {run_id}")
@@ -615,8 +655,8 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
         end_lat, end_lon, end_node = end
 
         # ----- Preflight: surface snap/resolve problems *before* we route -----
-        start_entry = gazetteer.resolve(origin, G)
-        end_entry = gazetteer.resolve(destination, G)
+        start_entry = gazetteer.resolve(origin_key, G)
+        end_entry = gazetteer.resolve(destination_key, G)
         intermediate_streets_raw = list(intermediary_runs.get(run_id, []))
         pre = preflight_run(
             start_entry, end_entry,

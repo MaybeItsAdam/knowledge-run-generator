@@ -390,22 +390,25 @@ def diagnose(run_id, runs, direction, full, context):
                    "(unresolved, or snap distance > threshold).")
 @click.option("--max-snap", type=float, default=50.0, show_default=True,
               help="Snap distance treated as a failure (same as preflight).")
-def audit_endpoints(problems_only, max_snap):
+@click.option("--json-out", type=click.Path(dir_okay=False), default=None,
+              help="Also write every resolved endpoint (snapped node position, "
+                   "source, snap distance) to this JSON file.")
+def audit_endpoints(problems_only, max_snap, json_out):
     """Resolve every Blue Book run endpoint through the gazetteer.
 
     Uses exactly the resolution path preflight uses (demo poi_overrides ->
     knowledge_pois -> osm_pois -> street tier, then semantic snap), so the
-    output predicts which runs will fail preflight on endpoints — without
-    routing anything.
+    output predicts which runs will fail preflight on endpoints, without
+    routing anything. Names are TfL Annex B's, resolved through
+    annex_b_geocode_names.json like the pipeline does. Ends with the
+    shared-coordinate guard the build gate applies.
     """
     import krg
-    from knowledge_run_generator.blue_book_demo.run_pipeline import (
-        DEMO_DIR, parse_intermediary_file,
-    )
+    from knowledge_run_generator.annex_b import annex_titles, geocode_name
+    from knowledge_run_generator.blue_book_demo.run_pipeline import DEMO_DIR
+    from knowledge_run_generator.endpoint_guard import check_endpoint_collisions
 
-    run_titles, _streets = parse_intermediary_file(
-        DEMO_DIR / "blue_book_runs_intermediary.txt"
-    )
+    run_titles = annex_titles()
 
     session = krg.Session(poi_overrides=DEMO_DIR / "poi_overrides.json")
     G = session.graph
@@ -421,14 +424,22 @@ def audit_endpoints(problems_only, max_snap):
     unresolved: list[str] = []
     over_snap: list[str] = []
     source_counts: dict[str, int] = {}
+    resolved: dict[str, dict] = {}
 
     for name in sorted(endpoints):
         uses = endpoints[name]
-        entry = gazetteer.resolve(name, G)
+        entry = gazetteer.resolve(geocode_name(name), G)
         if entry is None:
             unresolved.append(name)
             click.echo(f"NOT RESOLVED   {'':>8}  {name}   (runs: {', '.join(uses)})")
             continue
+        node = G.nodes[entry.snapped_node]
+        resolved[name] = {
+            "coordinates": [node["x"], node["y"]],
+            "source": entry.source,
+            "snap_m": round(entry.snap_distance_m, 1),
+            "runs": uses,
+        }
         source_counts[entry.source] = source_counts.get(entry.source, 0) + 1
         bad = entry.snap_distance_m > max_snap
         if bad:
@@ -441,6 +452,10 @@ def audit_endpoints(problems_only, max_snap):
             + (f"   (runs: {', '.join(uses)})" if bad else "")
         )
 
+    collisions = check_endpoint_collisions(
+        {name: rec["coordinates"] for name, rec in resolved.items()}
+    )
+
     click.echo(f"\n{'='*60}")
     click.echo(f"Endpoints: {len(endpoints)} distinct")
     for source, count in sorted(source_counts.items(), key=lambda kv: -kv[1]):
@@ -449,6 +464,15 @@ def audit_endpoints(problems_only, max_snap):
     click.echo(f"  NOT RESOLVED: {len(unresolved)}")
     for name in unresolved:
         click.echo(f"    {name}")
+    click.echo(f"  shared coordinates: {len(collisions)}")
+    for problem in collisions:
+        click.echo(f"    {problem}")
+
+    if json_out:
+        Path(json_out).write_text(json.dumps(
+            {"endpoints": resolved, "unresolved": unresolved,
+             "collisions": collisions}, indent=1))
+        click.echo(f"Wrote {json_out}")
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +505,28 @@ def osm_pois(cache, force, bbox):
     for kind, count in sorted(kind_counts(pois).items(),
                               key=lambda kv: (-kv[1], kv[0])):
         click.echo(f"  {kind:>10}: {count}")
+
+
+@cli.command("osm-access")
+@click.option("--cache", type=click.Path(dir_okay=False), default=None,
+              help="Where to write the harvest (default: constants/osm_access.json).")
+@click.option("--force", is_flag=True, help="Ignore the cache and re-query Overpass.")
+def osm_access(cache, force):
+    """Fetch station entrances and park/building ways in from OpenStreetMap.
+
+    Area endpoints (stations, parks, museums) set down at one of these rather
+    than on the road nearest the place's centre.
+    """
+    from collections import Counter
+
+    from knowledge_run_generator.osm_access import fetch_access
+
+    _repo, _scripts, constants = _repo_paths()
+    cache = cache or str(constants / "osm_access.json")
+    access = fetch_access(cache_path=Path(cache), force_refresh=force)
+    click.echo(f"Got {len(access)} ways in -> {cache}")
+    for kind, count in Counter(r["kind"] for r in access.values()).most_common():
+        click.echo(f"  {kind:>16}: {count}")
 
 
 # ---------------------------------------------------------------------------
@@ -658,6 +704,14 @@ def _validate_outputs(constants, expected=320):
     if missing:
         problems.append(f"runs incomplete: missing {missing}")
 
+    # Names from TfL Annex B, and no two different places on one coordinate.
+    from knowledge_run_generator.endpoint_guard import (
+        check_run_collisions, check_runs_match_annex_b,
+    )
+    if runs:
+        problems.extend(check_runs_match_annex_b(runs))
+        problems.extend(check_run_collisions(runs))
+
     malformed = {}
     for run in runs:
         shape_problems = check_run_shape(run)
@@ -833,6 +887,8 @@ def generate_all(out_dir, pdf, token, env_file, skip_pois, skip_osm, resume, no_
     if not skip_osm:
         click.echo(f"\n{'='*60}\nOSM gazetteer harvest\n{'='*60}")
         fetch_pois(bbox=LONDON_BBOX, cache_path=constants / "osm_pois.json")
+        from knowledge_run_generator.osm_access import fetch_access
+        fetch_access(cache_path=constants / "osm_access.json")
     else:
         click.echo("Skipping OSM harvest (--skip-osm).")
 

@@ -1,0 +1,351 @@
+# Annex B, "The lists of the 320 Routes you must learn"
+# Source: Transport for London, "Guide to Learning the Knowledge of London,
+#   All London edition" (the Blue Book), released under FOI to WhatDoTheyKnow:
+#   https://www.whatdotheyknow.com/request/electronic_copy_of_most_recent_b
+#   attachment "Guide to Learning the Knowledge of London All London edition.pdf"
+#   PDF sha256 368a5921af187aa6fc1373cd81d6679ccb3767858a111fe57ed285e4fdfd315f
+#   PDF created 2011-02-11 (Adobe InDesign CS5), pages 26 to 45.
+# Extracted verbatim with pdfplumber; page headers and footers removed, nothing
+# else edited. Numbering restarts at 1 in each list of 16, so run id =
+# (list - 1) * 16 + position. This file is independent of the generator,
+# which works from a separate Anki export of the runs.
+List 1
+1 Manor House Station, N4 to Gibson Square, N1
+2 Thornhill Square, N1 to Queen Square, WC1
+3 Chancery Lane Station, WC1 to Rolls Road, SE1
+4 Pages Walk, SE1 to St. Martin’s Theatre, WC2
+5 Australian High Commission, WC2 to Paddington Station, W2
+6 Lancaster Gate, W2 to Royal Free Hospital, NW3
+7 Fitzjohn’s Avenue, NW3 to Fitzhardinge Street, W1
+8 Ritz Hotel, W1 to Battersea Park Station, SW8
+9 Ponton Road, SW8 to Camberwell Grove, SE5
+10 Knatchbull Road, SE5 to Surrey Quays Station, SE16
+11 Timber Pond Road, SE16 to Grocers Hall Court, EC2
+12 Barbican, EC2 to Mile End Station, E3
+13 Beaumont Square, E1 to Cannon Wharf Business Centre, SE8
+14 New Cross Station, SE14 to National Maritime Museum, SE10
+15 Maze Hill Station, SE10 to West Ham Lane, E15
+16 West Ham Station, E15 to Dalston Kingsland Station, E8
+List 2
+1 Graham Road, E8 to Hanover Gate, Regent’s Park, NW1
+2 Baker Street Station, NW1 to Halkin Street, SW1
+3 Lowndes Square, SW1 to Hurlingham Club, SW6
+4 Fulham High Street, SW6 to Powis Square, W11
+5 Walmer Road, W11 to Wales Farm Road, W3
+6 Old Oak Lane, NW10 to Charing Cross Hospital, W6
+7 Ravenscourt Park, W6 to Gwendolen Avenue, SW15
+8 Manor Fields, SW15 to Bedford Hill, SW12
+9 Nightingale Lane, SW12 to Carlyle Square, SW3
+10 The Boltons, SW10 to Campden Hill Square, W8
+11 Woodsford Square, W14 to Chiswick Mall, W4
+12 Turnham Green Station, W4 to Oxford Gardens, W10
+13 Golborne Road, W10 to Pennine Drive, NW2
+14 Tilling Road, NW2 to Chetwynd Road, NW5
+15 Kentish Town Station, NW5 to West Smithfield, EC1
+16 Armoury House, EC1 to Tower Bridge, SE1
+List 3
+1 Sumner Street, SE1 to Mostyn Road, SW9
+2 Stockwell Park Road, SW9 to West Dulwich Station, SE21
+3 Frank Dixon Way, SE21 to Cedars Road, SW4
+4 Clapham North Station, SW4 to Mitcham Lane, SW16
+5 Ambleside Avenue, SW16 to Sydenham Hill, SE26
+6 Stanstead Road, SE23 to Milkwood Road, SE24
+7 Brixton Water Lane, SW2 to Forest Hill Road, SE22
+8 Barry Road, SE22 to Kennington Cross, SE11
+9 Kennington Station, SE11 to Nunhead Station, SE15
+10 Lyndhurst Way, SE15 to Royal Circus, SE27
+11 St. Julian’s Farm Road, SE27 to St. George’s Hospital, SW17
+12 Tooting Bec Station, SW17 to Dulwich Wood Park, SE19
+13 Crown Dale, SE19 to Crofton Park Station, SE4
+14 Ravensbourne Park, SE6 to Lewisham Station, SE13
+15 Belmont Hill, SE13 to Pepys Road, SE14
+16 Sanford Street, SE14 to Lime Street, EC3
+List 4
+1 Shadwell Station, E1 to The Oval, SE11
+2 Lorrimore Square, SE17 to Central Criminal Court, EC4
+3 Southwark Bridge, EC4 to Goldsmith’s Row, E2
+4 Cambridge Heath Station, E2 to Mudchute Station, E14
+5 Billingsgate Market, E14 to Lauriston Road, E9
+6 Morning Lane, E9 to Silvertown Way, E16
+7 Star Lane, E16 to Oliver Road, E10
+8 Spitalfields Market, E10 to Manse Road, N16
+9 Albion Road, N16 to Hornsey Rise, N19
+10 St. John’s Way, N19 to Woodstock Avenue, NW11
+11 Wentworth Road, NW11 to Muswell Hill Road, N10
+12 Fortis Green, N2 to West Green Road, N15
+13 South Tottenham Station, N15 to Rushmore Road, E5
+14 Lower Clapton Road, E5 to Market Road, N7
+15 Holloway Road Station, N7 to Turnpike Lane, N8
+16 Tottenham Lane, N8 to St. Edmunds Terrace, NW8
+List 5
+1 St. John’s Wood Station, NW8 to Brompton Oratory, SW7
+2 Melton Court, SW7 to Southfields Station, SW18
+3 Buckhold Road, SW18 to Arundel Terrace, SW13
+4 Verdun Road, SW13 to Victoria Drive, SW19
+5 Wimbledon Park Road, SW19 to Plough Road, SW11
+6 Broomwood Road, SW11 to Philbeach Gardens, SW5
+7 West Brompton Station, SW5 to East Acton Station, W12
+8 Sawley Road, W12 to Warrington Crescent, W9
+9 Maida Vale Station, W9 to Dollis Hill Station, NW10
+10 Brent Magistrates’ Court, NW10 to Finchley Road Station, NW3
+11 Fortune Green Road, NW6 to South Grove, N6
+12 Bishopswood Road, N6 to Westbury Avenue, N22
+13 Mayes Road, N22 to Highbury Grove, N5
+14 Petherton Road, N5 to Monument Way, N17
+15 Downhills Park Road, N17 to East Finchley Station, N2
+16 Lyttelton Road, N2 to Harringay Greens Lanes Station, N4
+List 6
+1 Aldwych, WC2 to Gloucester Road Station, SW7
+2 Cornwall Gardens, SW7 to Norfolk Square, W2
+3 Leinster Square, W2 to Royal Academy of Dramatic Art, WC1
+4 British Museum, WC1 to Elspeth Road, SW11
+5 Battersea Arts Centre, SW11 to Imperial War Museum, SE1
+6 Jubilee Gardens, SE1 to Royal London Hospital, E1
+7 Arbour Square, E1 to Sadler’s Wells Theatre. EC1
+8 Myddleton Square, EC1 to Golden Square, W1
+9 Palladium Theatre, W1 to Devonshire Square, EC2
+10 Moorgate Station, EC2 to Canonbury Station, N1
+11 Canonbury Square, N1 to Townshend Road, NW8
+12 St. John’s Wood High Street, NW8 to Victoria Coach Station, SW1
+13 Buckingham Palace, SW1 to Loughborough Junction Station, SW9
+14 Brixton Market, SW9 to Portland Street, SE17
+15 Penton Place, SE17 to Narrow Street, E14
+16 West India Dock Road, E14 to Brookmill Road, SE8
+List 7
+1 Deptford Station, SE8 to Honour Oak Park, SE23
+2 Perry Vale, SE23 to Champion Hill, SE5
+3 Kings College Hospital, SE5 to Poplar High Street, E14
+4 Glenworth Avenue, E14 to Theatre Royal, Stratford, E15
+5 Stratford Station, E15 to London Chest Hospital, E2
+6 Bethnal Green Station, E2 to Jamaica Road, SE16
+7 Salter Road, SE16 to Lewisham Park, SE13
+8 Ladywell Station, SE13 to East Dulwich Station, SE22
+9 Overhill Road, SE22 to Marylebone Station, NW1
+10 Warwick Avenue Station, W9 to Haverstock Hill, NW3
+11 Primrose Hill Road, NW3 to Donnington Road, NW10
+12 Craven Park, NW10 to LInden Gardens, W4
+13 Burlington Lane, W4 to West Hill, SW15
+14 Lacy Road, SW15 to Olympia, W14
+15 Oakwood Court, W14 to Carlton Vale, NW6
+16 Chevening Road, NW6 to Queen’s Gate, SW7
+List 8
+1 Royal College of Music, SW7 to Crouch Hill Station, N4
+2 Harringay Station, N4 to Whitestone Pond, NW3
+3 New End Square, NW3 to Priory Road, N8
+4 The Broadway, N8 to Spring Hill, E5
+5 Warwick Grove, E5 to Angel Station, N1
+6 York Way, N1 to North Hill, N6
+7 Highgate Station, N6 to Seven Sisters Station, N15
+8 Vartry Road, N15 to Oakley Square, NW1
+9 Euston Station, NW1 to Brixton Prison, SW2
+10 Streatham Hill Station, SW2 to East Putney Station, SW15
+11 Dryburgh Road, SW15 to Vicarage Crescent, SW11
+12 Albert Bridge, SW11 to Streatham Common, SW16
+13 Leigham Avenue, SW16 to Half Moon Lane, SE24
+14 Dulwich College, SE21 to Vauxhall Bridge, SW8
+15 Fentiman Road, SW8 to Wandsworth Prison, SW18
+16 Swandon Way, SW18 to Landor Road, SW9
+List 9
+1 Clapham Common Station, SW4 to Cleveland Square, W2
+2 Royal Oak Station, W2 to Barons Court Station, W14
+3 Shortlands, W6 to Edith Grove, SW10
+4 Elm Park Gardens, SW10 to Exmoor Street, W10
+5 Pangbourne Avenue, W10 to St. John’s Wood Park, NW8
+6 Lord’s Cricket Ground, NW8 to Willesden Green Station, NW2
+7 Dollis Hill Lane, NW2 to Sterne Street, W12
+8 Lime Grove, W12 to Burton Court, SW3
+9 Ormonde Gate, SW3 to Leman Street, E1
+10 Wapping Lane, E1 to Canning Town Station, E16
+11 East India Station, E14 to London Fields Station, E8
+12 Homerton Station, E9 to Houndsditch, EC3
+13 Tower Gateway Station, EC3 to Twelve Trees Crescent, E3
+14 Parnell Road, E3 to North Greenwich Station, SE10
+15 Blackwall Lane, SE10 to Southampton Way, SE5
+16 Queens Road Peckham Station, SE15 to Raymouth Road, SE16
+List 10
+1 Redriff Road, SE16 to Bagley’s Lane, SW6
+2 Seagrave Road, SW6 to Rectory Lane, SW17
+3 Tooting Broadway Station, SW17 to Jeffreys Road, SW4
+4 Wandsworth Road Station, SW8 to Ennismore Gardens, SW7
+5 Montpelier Square, SW7 to Balham Hill, SW12
+6 Wandsworth Common Station, SW12 to Norwood High Street, SE27
+7 Sunnyhill Road, SW16 to Honor Oak Road, SE23
+8 Townley Road, SE22 to Grange Road, SE1
+9 Stamford Street, SE1 to Stamford Hill, N16
+10 Cazenove Road, N16 to Malden Road, NW5
+11 Torriano Avenue, NW5 to The Bishop’s Avenue, N2
+12 Aylmer Road, N2 to Mackenzie Road, N7
+13 Caledonian Road Station, N7 to Alexandra Palace, N22
+14 Muswell Hill, N10 to Avenell Road, N5
+15 Highbury Fields, N5 to Ruckholt Road, E10
+16 Abbey Lane, E15 to Balls Pond Road, N1
+List 11
+1 Highbury Corner, N1 to Trinity Street, SE1
+2 Lambeth High Street, SE1 to Hall Road, NW8
+3 Boundary Road, NW8 to Northampton Square, EC1
+4 St. John’s Square, EC1 to St. James’s Square. SW1
+5 St. Stephen’s Club, SW1 to De Vere Gardens, W8
+6 Vicarage Gate, W8 to Cadogan Gardens, SW3
+7 Cheyne Walk, SW3 to Pembridge Square, W2
+8 Bayswater Station, W2 to St. George’s Square, SW1
+9 Victoria Station, SW1 to Liverpool Street Station, EC2
+10 Leonard Street, EC2 to Thessaly Road, SW8
+11 Union Road, SW8 to Red Lion Square, WC1
+12 Mecklenburgh Square, WC1 to Eastcheap, EC3
+13 Blackfriars Station, EC4 to Bryanston Street, W1
+14 Grosvenor Square, W1 to Amelia Street, SE17
+15 Black Prince Road, SE11 to Agar Grove, NW1
+16 Hawley Road, NW1 to Bryanston Square, W1
+List 12
+1 Savile Row, W1 to Spa Road, SE16
+2 Rotherhithe Station, SE16 to Bow Church Station, E3
+3 Knapp Road, E3 to Burwell Road, E10
+4 Church Road, E10 to Dunloe Street, E2
+5 Arnold Circus, E2 to Salmon Lane, E14
+6 Cabot Square, E14 to Vallance Road, E1
+7 Cannon Street Road, E1 to Major Road, E15
+8 Carpenters Road, E15 to Clapton Station, E5
+9 Downs Road, E5 to Princes Circus, WC2
+10 St. Martin’s Lane, WC2 to Fulham Broadway Station, SW6
+11 Eel Brook Common, SW6 to Phillimore Gardens, W8
+12 Lexham Gardens, W8 to Church Road, SW13
+13 Barnes Bridge Station, SW13 to Bromyard Avenue, W3
+14 Acton Central Station, W3 to Kilburn Priory, NW6
+15 Priory Road, NW6 to Chepstow Road, W2
+16 Oxford Square, W2 to Latimer Road Station, W10
+List 13
+1 Kensal Road, W10 to Kings Cross Station, N1
+2 Rodney Street, N1 to Hampstead Heath Station, NW3
+3 Belsize Park Station, NW3 to Tollington Way, N7
+4 Holloway Prison, N7 to Golders Green Station, NW11
+5 Meadway Gate, NW11 to Park Road, N8
+6 Hornsey Station, N8 to Stoke Newington Station, N16
+7 Lordship Road, N16 to Farringdon Station, EC1
+8 Lever Street, EC1 to Hackney Town Hall, E8
+9 Broadway Market, E8 to Camberwell Church Street, SE5
+10 Camberwell Road, SE5 to Lancaster Avenue, SE27
+11 Gipsy Road, SE27 to Vassall Road, SW9
+12 Wiltshire Road, SW9 to Clapham Junction Station, SW11
+13 Latchmere Road, SW11 to Elmbourne Road, SW17
+14 Franciscan Road, SW17 to Wimbledon Park Station, SW19
+15 Earlsfield Station, SW18 to Dawes Road, SW6
+16 Parsons Green Station, SW6 to South Lambeth Road, SW8
+List 14
+1 Silverthorne Road, SW8 to Belsize Square, NW3
+2 Swiss Cottage Station, NW3 to Middleway, NW11
+3 North End Road, NW11 to Christchurch Avenue, NW6
+4 Queen’s Park Station, NW6 to Camden Street, NW1
+5 York Gate, NW1 to Hyde Park Gardens, W2
+6 Paddington Green, W2 to Askew Road, W12
+7 Linford Christie Stadium, W12 to Cadogan Square, SW1
+8 Ebury Bridge Road, SW1 to Elgar Street, SE16
+9 The New Den, SE16 to Greenwich South Street, SE10
+10 Greenwich Market, SE10 to Doggett Road, SE6
+11 Breakspears Road, SE4 to Limeharbour, E14
+12 Abbott Road, E14 to Fenchurch Street Station, EC3
+13 Brick Lane, E1 to Kinglake Street, SE17
+14 Rodney Road, SE17 to Kender Street, SE14
+15 Meeting House Lane, SE15 to Molesworth Street, SE13
+16 Howson Road, SE4 to Evelyn Street, SE8
+List 15
+1 New Cross Gate Station, SE14 to West Side Clapham Common, SW4
+2 King’s Avenue, SW4 to Lower Richmond Road, SW15
+3 Dover House Road, SW15 to Brompton Square, SW3
+4 Petyward, SW3 to Merton Road, SW18
+5 Allfarthing Lane, SW18 to Drewstead Road, SW16
+6 Streatham Place, SW2 to Waldram Park Road, SE23
+7 London Road, SE23 to Peckham Rye Station, SE15
+8 Peckham Park Road, SE15 to Tulse Hill, SW2
+9 Lambeth Town Hall, SW2 to Lambeth Palace, SE1
+10 Marshalsea Road, SE1 to Tollington Road, N7
+11 Tufnell Park Road, N7 to St. Ann’s Road, N15
+12 Turnpike Lane Station, N15 to Malvern Road, E8
+13 Albion Square, E8 to Upper Holloway Station, N19
+14 Archway Station, N19 to Gloucester Gate, NW1
+15 Inner Circle, Regent’s Park, NW1 to Sheldon Avenue, N6
+16 Highgate Cemetery, N6 to Stoke Newington Church Street, N16
+List 16
+1 Clissold Park, N16 to Wilmington Square, WC1
+2 University College Hospital, WC1 to Carlton Hill, NW8
+3 Delaware Road, W9 to Camden Square, NW1
+4 Park Square East, NW1 to Weston Street, SE1
+5 Tanner Street, SE1 to Artillery Row, SW1
+6 Warwick Square, SW1 to York Road, SW11
+7 Battersea Church Road, SW11 to Goodge Street Station, W1
+8 Half Moon Street, W1 to Fairhazel Gardens, NW6
+9 Victoria Road, NW6 to De Beauvoir Square, N1
+10 Penn Street, N1 to Portland Place, W1
+11 Cavendish Square, W1 to Metropolitan Tabernacle, SE1
+12 London Bridge Station, SE1 to Squirries Street, E2
+13 Sidney Square, E1 to Covent Garden Station, WC2
+14 Surrey Street, WC2 to Peckham Rye, SE15
+15 Consort Road, SE15 to Ministry of Defence, SW1
+16 Parliament Square, SW1 to Golden Lane, EC1
+List 17
+1 Finsbury Circus, EC2 to Wick Road, E9
+2 Well Street, E9 to Finsbury Park Station, N4
+3 Tollington Park, N4 to Forest Road, E8
+4 Hackney Central Station, E8 to Sidmouth Street, WC1
+5 Cartwright Gardens, WC1 to Thomas Moore Street, E1
+6 Glamis Road, E1 to Wordsworth Road, N16
+7 Aberdeen Road, N5 to Old Street Station, EC1
+8 Moorfields Eye Hospital, EC1 to Landsdowne Way, SW8
+9 Caldwell Street, SW9 to Burntwood Lane, SW17
+10 Streatham Cemetery, SW17 to Queen’s Ride, SW13
+11 Stevenage Road, SW6 to B.B.C. Television Centre, W12
+12 Glenthorne Road, W6 to Sutherland Grove, SW18
+13 Huguenot Place, SW18 to Sloane Square Station, SW1
+14 Lupus Street, SW1 to Thornton Road, SW12
+15 Boundaries Road, SW12 to Peterborough Road, SW6
+16 Townmead Road, SW6 to Old Compton Street, W1
+List 18
+1 Tottenham Court Road Station, W1 to Flood Street, SW3
+2 Royal Hospital, SW3 to Ilderton Road, SE15
+3 Sumner Road, SE15 to Central Hill, SE19
+4 Gipsy Hill Station, SE19 to Christchurch Road, SW2
+5 Herne Hill Station, SE24 to Waterloo Station, SE1
+6 Webber Street, SE1 to Brockley Station, SE4
+7 Adelaide Avenue, SE4 to Sydenham Hill Station, SE21
+8 Kirkdale, SE26 to Southwark Crown Court, SE1
+9 St. Paul’s Station, EC1 to Pancras Road, NW1
+10 Cumberland Market, NW1 to High Street Kensington Station, W8
+11 Kensington Mall, W8 to Iverson Road, NW6
+12 Brondesbury Park Station, NW6 to Holland Park Station, W11
+13 Arundel Gardens, W11 to Kensal Green Station, NW10
+14 High Street, NW10 to Temple Fortune Hill, NW11
+15 Brent Cross Station, NW11 to Gospel Oak Station, NW5
+16 Highgate Road, NW5 to High Street, N8
+List 19
+1 Cholmeley Park, N6 to Cricklewood Station, NW2
+2 Shoot Up Hill, NW2 to Gloucester Avenue, NW1
+3 Holmes Road, NW5 to Shepherdess Walk, N1
+4 Essex Road Station, N1 to Hackney Wick Station, E9
+5 Old Ford Road, E3 to Tiller Road, E14
+6 Chrisp Street, E14 to Museum of London, EC2
+7 Great Eastern Street, EC2 to Shacklewell Lane, E8
+8 Amhurst Road, E8 to Fortess Road, NW5
+9 Kentish Town West Station, NW5 to Lisson Grove, NW8
+10 Abercorn Place, NW8 to Three Kings Yard, W1
+11 Paddington Street, W1 to Fernhead Road, W9
+12 Chippenham Road, W9 to Queen’s Club Gardens, W14
+13 West Kensington Station, W14 to Cambridge Road, SW11
+14 Bolingbroke Grove, SW11 to Munster Road, SW6
+15 Chelsea Harbour Drive, SW10 to Marsham Street, SW1
+16 Belgrave Square, SW1 to Bouverie Street, EC4
+List 20
+1 Cannon Street Station, EC4 to Southgate Road, N1
+2 Pitfield Street, N1 to Junction Road, N19
+3 Brownswood Road, N4 to West Hampstead Station, NW6
+4 Chichele Road, NW2 to Royal Crescent, W11
+5 St. Mark’s Road, W11 to Fitzroy Square, W1
+6 Mortimer Street, W1 to Blythe Road, W14
+7 Warwick Gardens, W14 to Harlesden Station, NW10
+8 Chamberlayne Road, NW10 to Conningham Road, W12
+9 South Africa Road, W12 to Brondesbury Station, NW6
+10 Kilburn Lane, W10 to Bolton Gardens, SW5
+11 Earl’s Court Station, SW5 to Regency Street, SW1
+12 Lambeth North Station, SE1 to Finborough Road, SW10
+13 Chelsea & Westminster Hospital, SW10 to Lincoln’s Inn Fields, WC2
+14 Leicester Square, WC2 to The Guildhall, EC2
+15 Bancroft Road, E1 to St. Peters Street, N1
+16 Copenhagen Street, N1 to Charing Cross Station, WC2

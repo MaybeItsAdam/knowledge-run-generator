@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from .aliases import AliasIndex, normalise as _normalise_name
+from .osm_access import best_access_point
 
 # Trailing punctuation is tolerated: the Blue Book source has entries like
 # "BROMYARD AVENUE W3." that would otherwise keep their postcode forever.
@@ -44,6 +45,27 @@ _POSTCODE_SUFFIX_RE = re.compile(r"\s+([A-Z]{1,2}\d{1,2}[A-Z]?)\s*[.,]?\s*$")
 DEFAULT_KNOWLEDGE_POIS_PATH = (
     Path(__file__).resolve().parent.parent / "constants" / "knowledge_pois.json"
 )
+
+# One centre per postal district from postcodes.io (see
+# scripts/build_district_centres.py). Committed, so resolution never depends
+# on a geocoder's idea of where "W1" is.
+DISTRICT_CENTRES_PATH = Path(__file__).resolve().parent / "data" / "postal_district_centres.json"
+_district_centres: dict[str, tuple[float, float]] | None = None
+
+
+def load_district_centres(path: str | Path | None = None) -> dict[str, tuple[float, float]]:
+    """``{"W1": (lat, lon), ...}`` from the vendored postcodes.io table."""
+    global _district_centres
+    if path is None and _district_centres is not None:
+        return _district_centres
+    source = Path(path) if path else DISTRICT_CENTRES_PATH
+    out: dict[str, tuple[float, float]] = {}
+    if source.exists():
+        raw = json.loads(source.read_text()).get("centres", {})
+        out = {k.upper(): (float(v["lat"]), float(v["lon"])) for k, v in raw.items()}
+    if path is None:
+        _district_centres = out
+    return out
 
 
 def _split_postcode(name: str) -> tuple[str, str | None]:
@@ -103,6 +125,10 @@ def _station_stems(name: str) -> list[str]:
 # fail the run anyway.
 _STREET_FALLBACK_SNAP_M = 50.0
 
+# Above this snap (preflight's warning level) an endpoint's own point is taken
+# to be inside a footprint, and its ways in are tried.
+_ACCESS_SNAP_M = 20.0
+
 # Highway classes we avoid snapping to when a better option exists. Dual
 # carriageways and slip roads are the sources of the "wrong side" bug.
 _AVOID_HIGHWAY_CLASSES = {
@@ -123,6 +149,9 @@ class GazetteerEntry:
     on_street: str | None = None
     approach_node: int | None = None
     source: str = "override"
+    # Set when the node is a way in (station entrance, park gate, building
+    # entrance) rather than the road nearest the place's centre.
+    access_kind: str | None = None
     # The winning record's postal district disagreed with the one in the
     # query. Not fatal on its own — Points List districts have gaps — but
     # preflight surfaces it, because it is how wrong-borough endpoints happen.
@@ -141,7 +170,12 @@ class DistrictModel:
     """
 
     def __init__(self, knowledge_pois: dict | None, min_points: int = 5,
-                 radius_floor_m: float = 1000.0):
+                 radius_floor_m: float = 1000.0,
+                 centres: dict[str, tuple[float, float]] | None = None):
+        # ``centres`` (the vendored postcodes.io table) overrides the median
+        # of the Points List when given: the median is only as good as the
+        # geocodes behind it, and a geocoder collapse drags it.
+        fixed_centres = {k.upper(): v for k, v in (centres or {}).items()}
         self._centres: dict[str, tuple[float, float]] = {}
         self._radii: dict[str, float] = {}
 
@@ -159,7 +193,7 @@ class DistrictModel:
         for district, points in by_district.items():
             lats = sorted(p[0] for p in points)
             lons = sorted(p[1] for p in points)
-            centre = (lats[len(lats) // 2], lons[len(lons) // 2])
+            centre = fixed_centres.get(district) or (lats[len(lats) // 2], lons[len(lons) // 2])
             # A centre helps even at n=1 (street-tier disambiguation just
             # needs *an* anchor in the right part of town); a plausibility
             # radius is only trustworthy with enough points behind it, so
@@ -172,6 +206,8 @@ class DistrictModel:
             )
             p95 = dists[min(len(dists) - 1, int(0.95 * len(dists)))]
             self._radii[district] = max(p95, radius_floor_m)
+        for district, centre in fixed_centres.items():
+            self._centres.setdefault(district, centre)
 
     def centre(self, district: str | None) -> tuple[float, float] | None:
         if not district:
@@ -223,9 +259,91 @@ def _edge_highway_class(edge_data: dict) -> str:
     return str(hwy or "")
 
 
+def _edge_is_snappable(edge_data: dict, dual: set | None = None, key=None) -> bool:
+    """An edge an endpoint may sit on.
+
+    Motorways never. Trunk roads unless the edge is one carriageway of a dual
+    carriageway (``key`` in ``dual``, see :func:`_dual_carriageway_edges`):
+    the "wrong side of the central reservation" trap is specific to those.
+    A two-way trunk road is an ordinary high street with a red-route number
+    (Balham High Road at Tooting Bec), and a one-way trunk street in a
+    one-way system is a kerb like any other (Earl's Court Road); excluding
+    them stranded every station on one 60 to 90 m from a "routable" node.
+    Without ``dual`` (no graph to hand) every one-way trunk edge counts as
+    dual, the old, cautious behaviour.
+    """
+    klass = _edge_highway_class(edge_data)
+    if not klass:
+        return False
+    if klass not in _AVOID_HIGHWAY_CLASSES:
+        return True
+    if klass.startswith("motorway"):
+        return False
+    oneway = edge_data.get("oneway")
+    if oneway is False or str(oneway).lower() in ("false", "no", "0"):
+        return True
+    if dual is None or key is None:
+        return False
+    return key not in dual
+
+
+# Two one-way carriageways of the same road closer than this, running in
+# opposite directions, are a dual carriageway.
+_DUAL_CARRIAGEWAY_M = 45.0
+
+_dual_cache: dict[int, set] = {}
+
+
+def _dual_carriageway_edges(G) -> set:
+    """``(u, v)`` of every one-way trunk edge that has an opposite-direction
+    one-way twin of the same name within :data:`_DUAL_CARRIAGEWAY_M`."""
+    cached = _dual_cache.get(id(G))
+    if cached is not None:
+        return cached
+    from .aliases import _iter_names
+
+    def bearing(u, v):
+        x, y = _local_xy(G.nodes[u]["y"], G.nodes[u]["x"], G.nodes[v]["y"], G.nodes[v]["x"])
+        n = math.hypot(x, y) or 1e-9
+        return x / n, y / n
+
+    by_name: dict[str, list] = {}
+    for u, v, data in G.edges(data=True):
+        if _edge_highway_class(data) not in ("trunk", "trunk_link"):
+            continue
+        oneway = data.get("oneway")
+        if oneway is False or str(oneway).lower() in ("false", "no", "0"):
+            continue
+        for name in _iter_names(data) or ["?"]:
+            by_name.setdefault(_normalise_name(name), []).append((u, v))
+
+    dual: set = set()
+    for edges in by_name.values():
+        mids = []
+        for u, v in edges:
+            la = (G.nodes[u]["y"] + G.nodes[v]["y"]) / 2
+            lo = (G.nodes[u]["x"] + G.nodes[v]["x"]) / 2
+            mids.append((la, lo, bearing(u, v)))
+        for i, (u, v) in enumerate(edges):
+            la, lo, (bx, by) = mids[i]
+            ends = [(G.nodes[u]["y"], G.nodes[u]["x"]), (la, lo), (G.nodes[v]["y"], G.nodes[v]["x"])]
+            for j, (u2, v2) in enumerate(edges):
+                if i == j:
+                    continue
+                la2, lo2, (bx2, by2) = mids[j]
+                if bx * bx2 + by * by2 > -0.7:
+                    continue
+                other = [(G.nodes[u2]["y"], G.nodes[u2]["x"]), (la2, lo2), (G.nodes[v2]["y"], G.nodes[v2]["x"])]
+                if min(_haversine(a, b, c, d) for a, b in ends for c, d in other) <= _DUAL_CARRIAGEWAY_M:
+                    dual.add((u, v))
+                    break
+    _dual_cache[id(G)] = dual
+    return dual
+
+
 def _node_is_routable(G, node: int) -> bool:
-    """True if *node* can be both entered and left via non-avoided drivable
-    edges.
+    """True if *node* can be both entered and left via snappable drivable
+    edges (see :func:`_edge_is_snappable`).
 
     Touching one drivable edge is not enough: a node at the upstream tip of a
     one-way (0 in-edges) can never be *arrived at*, and a sink node (0
@@ -235,21 +353,14 @@ def _node_is_routable(G, node: int) -> bool:
     a route can actually terminate at and depart from.
     """
     try:
-        has_out = False
-        for _, _, data in G.out_edges(node, data=True):
-            klass = _edge_highway_class(data)
-            if klass and klass not in _AVOID_HIGHWAY_CLASSES:
-                has_out = True
-                break
-        if not has_out:
+        dual = _dual_carriageway_edges(G)
+        if not any(_edge_is_snappable(d, dual, (u, v))
+                   for u, v, d in G.out_edges(node, data=True)):
             return False
-        for _, _, data in G.in_edges(node, data=True):
-            klass = _edge_highway_class(data)
-            if klass and klass not in _AVOID_HIGHWAY_CLASSES:
-                return True
+        return any(_edge_is_snappable(d, dual, (u, v))
+                   for u, v, d in G.in_edges(node, data=True))
     except Exception:
-        pass
-    return False
+        return False
 
 
 def _parse_override(value: Any) -> dict | None:
@@ -412,6 +523,12 @@ class _PoiTable:
 
         if not candidates:
             return None
+        if (wants_station and self.source == "osm"
+                and not any(c.get("kind") in _STATION_KINDS for c in candidates)):
+            # OSM kinds are reliable: a station query that only finds the
+            # park or suburb of the same name ("WANDSWORTH COMMON STATION"
+            # finding the common, a kilometre off) has not found the station.
+            return None
         return self._best(candidates, postcode, wants_station)
 
     @staticmethod
@@ -447,6 +564,39 @@ class _PoiTable:
         return pool[0]
 
 
+def _point_identity(name: str) -> str:
+    """Canonical identity of a point name for collision checks: postcode,
+    parenthetical notes ("(+ Cab Shelter)") and punctuation dropped."""
+    stem, _postcode = _split_postcode(re.sub(r"\s*\([^)]*\)", " ", name or ""))
+    return _normalise_name(stem)
+
+
+def drop_shared_coordinates(records: dict | None) -> tuple[dict, list[str]]:
+    """Remove machine-geocoded records whose exact coordinate is shared with a
+    *differently named* record.
+
+    Identical coordinates for different names is how a geocoder fallback
+    looks from the outside: the 2026-09 Points List geocode put 69 different
+    W1 streets on one point in Kennington, and a chain's branches on its
+    head office. None of those records can be trusted, and dropping them
+    lets resolution fall through to the OSM and street tiers, which place
+    each name on its own. Returns ``(kept, dropped_names)``.
+    """
+    groups: dict[tuple[float, float], list[str]] = {}
+    for key, value in (records or {}).items():
+        parsed = _parse_override(value)
+        if parsed is None:
+            continue
+        coord = (round(parsed["lat"], 7), round(parsed["lon"], 7))
+        groups.setdefault(coord, []).append(key)
+    dropped: set[str] = set()
+    for keys in groups.values():
+        if len({_point_identity(k) for k in keys}) > 1:
+            dropped.update(keys)
+    kept = {k: v for k, v in (records or {}).items() if k not in dropped}
+    return kept, sorted(dropped)
+
+
 class Gazetteer:
     """
     Resolves human-readable place names into a ``GazetteerEntry`` containing a
@@ -479,8 +629,20 @@ class Gazetteer:
         alias_index: AliasIndex | None = None,
         osm_pois: dict | None = None,
         knowledge_pois: dict | None = None,
+        district_centres: dict[str, tuple[float, float]] | None = None,
+        access: dict | None = None,
     ):
         self._overrides_raw: dict[str, Any] = overrides or {}
+        # Ways in (station entrances, park gates) from ``krg osm-access``.
+        from .osm_access import AccessIndex
+        self.access = AccessIndex(access)
+        # A machine geocode shared by two different names is a fallback, not
+        # a place (see drop_shared_coordinates). Curated overrides and OSM
+        # features are exempt: they are positions, not guesses.
+        knowledge_pois, self.rejected_knowledge_pois = drop_shared_coordinates(knowledge_pois)
+        self._district_centres = (
+            load_district_centres() if district_centres is None else district_centres
+        )
         # An override whose value is a name rather than a position is an alias:
         # "HOLLOWAY PRISON": "HM Prison Holloway" says the Blue Book's name for
         # a point differs from the one in the data, without pinning a
@@ -516,7 +678,8 @@ class Gazetteer:
         district without anything noticing.
         """
         if self._district_model is None:
-            self._district_model = DistrictModel(self._knowledge_pois_raw)
+            self._district_model = DistrictModel(
+                self._knowledge_pois_raw, centres=self._district_centres)
         return self._district_model
 
     # ------------------------------------------------------------------
@@ -529,14 +692,29 @@ class Gazetteer:
 
         Aliases are followed first, so a Blue Book name can be pointed at the
         name a data source actually uses without duplicating its coordinates.
+
+        Station-shaped names try OSM before the Points List: OSM's
+        ``railway=station`` is the station itself, while the Points List
+        geocode of "HOLLAND PARK STATION W11" landed on Latimer Road station.
+        A machine-tier hit that is implausibly far from the name's postal
+        district (the district model's ``fail``) is skipped rather than
+        returned, so the next tier gets its chance.
         """
         if not address:
             return None
         address = self._follow_aliases(address)
-        for table in self._tables:
+        stem, postcode = _split_postcode(address)
+        override, knowledge, osm = self._tables
+        order = (override, osm, knowledge) if _looks_like_station(stem) else self._tables
+        for table in order:
             hit = table.lookup(address)
-            if hit is not None:
-                return self._tag_source(dict(hit), table.source)
+            if hit is None:
+                continue
+            if table.source != "override" and postcode:
+                verdict = self.district_model.check(postcode, hit["lat"], hit["lon"])
+                if verdict is not None and verdict["status"] == "fail":
+                    continue
+            return self._tag_source(dict(hit), table.source)
         return None
 
     def _follow_aliases(self, address: str, max_hops: int = 4) -> str:
@@ -572,9 +750,25 @@ class Gazetteer:
         record = self.lookup_coords(address)
         if record is None:
             # Tier 4: the endpoint may be a street rather than a named point.
+            # Never for a station: the street tier's word-dropping turned
+            # "LONDON BRIDGE STATION" into the bridge. An unresolved station
+            # fails preflight, where it is seen.
+            if _looks_like_station(_split_postcode(self._follow_aliases(address))[0]):
+                self._resolve_cache[cache_key] = None
+                return None
             entry = self._resolve_street(address, G)
             self._resolve_cache[cache_key] = entry
             return entry
+
+        # A name that *is* a street in the graph ("GOLDEN SQUARE W1") means
+        # the street, and the street's own geometry is a better answer than
+        # any geocoder's rooftop guess along it. Only a curated override
+        # outranks it.
+        if record.get("_source") != "override" and self.is_street_name(address):
+            street_entry = self._resolve_street(address, G, exact=True)
+            if street_entry is not None:
+                self._resolve_cache[cache_key] = street_entry
+                return street_entry
 
         lat = record["lat"]
         lon = record["lon"]
@@ -588,6 +782,24 @@ class Gazetteer:
             on_street=on_street,
             alias_index=self.alias_index,
         )
+
+        # An area endpoint (station, park, museum) whose point is well off the
+        # road: set down at one of its ways in, as a cab would, instead of on
+        # whichever road passes nearest its centre. The snap is then measured
+        # from that way in, so preflight still fails a place with no way in
+        # near a road.
+        access_kind = None
+        curated_street = on_street and record.get("_source") == "override"
+        if snap_m > _ACCESS_SNAP_M and not curated_street:
+            stem, _postcode = _split_postcode(self._follow_aliases(address))
+            ways_in = self.access.candidates(
+                stem, lat, lon, station=_looks_like_station(stem))
+            best = best_access_point(ways_in, lat, lon, lambda la, lo: kerb_snap(G, la, lo))
+            # The set-down is the kerb outside the way in; the snap that
+            # preflight gates on is from there to the route's end node.
+            if best is not None and best[1][2] < snap_m:
+                way_in, (snapped_node, _kerb_m, snap_m) = best
+                access_kind = way_in["kind"]
 
         # A point-tier record in the *wrong postal district* whose name is a
         # street in the graph: the stated district is the Blue Book's, the
@@ -656,6 +868,7 @@ class Gazetteer:
             approach_node=approach_node,
             source=record.get("_source", "override"),
             district_mismatch=bool(record.get("_district_mismatch")),
+            access_kind=access_kind,
         )
         self._resolve_cache[cache_key] = entry
         return entry
@@ -674,13 +887,32 @@ class Gazetteer:
         """
         return self.district_model.centre(postcode)
 
-    def _resolve_street(self, address: str, G) -> GazetteerEntry | None:
+    def is_street_name(self, address: str) -> bool:
+        """True when *address* (less its district) is exactly a street name in
+        the graph, not a word-dropped approximation, and not a station."""
+        if self.alias_index is None:
+            return False
+        stem, _postcode = _split_postcode(self._follow_aliases(address))
+        if _looks_like_station(stem):
+            return False
+        norm = _normalise_name(stem)
+        return (norm in self.alias_index.canonical_to_nodes
+                or norm in self.alias_index.alias_to_canonical)
+
+    def _resolve_street(self, address: str, G, exact: bool = False) -> GazetteerEntry | None:
         """Resolve an endpoint that names a street rather than a point.
 
-        Returns the node on that street closest to the endpoint's postal
-        district, or the street's medoid node when there's no district to go
-        on. The entry's coordinate *is* a graph node, so ``snap_distance_m``
-        is 0 by construction.
+        The street is split into its connected stretches (London has dozens of
+        High Streets, and one name can be two unconnected roads); the stretch
+        nearest the endpoint's postal district is chosen, and the endpoint is
+        that stretch's centre node, limited to the part of a long road near
+        the district. Without a district, the longest stretch's centre.
+
+        ``exact`` refuses the alias index's word-dropping fallback, so
+        "ALEXANDRA PALACE" cannot become a street called Alexandra.
+
+        The entry's coordinate *is* a graph node, so ``snap_distance_m`` is 0
+        by construction.
         """
         if self.alias_index is None:
             return None
@@ -689,23 +921,41 @@ class Gazetteer:
         _original_stem, original_postcode = _split_postcode(address)
         stem, postcode = _split_postcode(self._follow_aliases(address))
         postcode = postcode or original_postcode
-        canonical = self.alias_index.resolve(stem)
+        norm = _normalise_name(stem)
+        if exact:
+            if norm in self.alias_index.canonical_to_nodes:
+                canonical = norm
+            else:
+                canonical = self.alias_index.alias_to_canonical.get(norm)
+        else:
+            canonical = self.alias_index.resolve(stem)
         if canonical is None:
             return None
 
-        nodes = [n for n in self.alias_index.nodes_for(stem) if n in G.nodes]
+        nodes = [n for n in self.alias_index.canonical_to_nodes.get(canonical, ())
+                 if n in G.nodes]
         if not nodes:
             return None
-        # Same routability rule as semantic_snap: never anchor an endpoint on
-        # a node the router can only enter or only leave.
-        routable = [n for n in nodes if _node_is_routable(G, n)]
-        nodes = routable or nodes
 
         anchor = self._district_centroid(postcode)
+        stretch = _street_stretch(G, canonical, nodes, anchor)
+        # Same routability rule as semantic_snap: never anchor an endpoint on
+        # a node the router can only enter or only leave.
+        routable = [n for n in stretch if _node_is_routable(G, n)]
+        candidates = routable or stretch
         if anchor is not None:
-            node = _closest_node(G, anchor[0], anchor[1], nodes)
-        else:
-            node = _medoid_node(G, nodes)
+            nearest = min(_haversine(anchor[0], anchor[1], G.nodes[n]["y"], G.nodes[n]["x"])
+                          for n in candidates)
+            # The name exists, but nowhere near this district: not this street.
+            verdict = self.district_model.check(
+                postcode, *_node_latlon(G, _closest_node(G, anchor[0], anchor[1], candidates)))
+            if verdict is not None and verdict["status"] == "fail":
+                return None
+            reach = nearest + _STREET_REACH_M
+            near = [n for n in candidates
+                    if _haversine(anchor[0], anchor[1], G.nodes[n]["y"], G.nodes[n]["x"]) <= reach]
+            candidates = near or candidates
+        node = _medoid_node(G, candidates)
         if node is None:
             return None
 
@@ -719,6 +969,57 @@ class Gazetteer:
             on_street=canonical,
             source="street",
         )
+
+
+# How far along a long road, beyond its point nearest the district centre,
+# the street tier still counts as "in the district" when centring. Keeps
+# "HOLLOWAY ROAD N7" on the N7 stretch rather than the middle of the road.
+_STREET_REACH_M = 1000.0
+
+
+def _node_latlon(G, node) -> tuple[float, float]:
+    n = G.nodes[node]
+    return n["y"], n["x"]
+
+
+def _street_stretch(G, canonical: str, nodes, anchor) -> list:
+    """The connected stretch of the street *canonical* nearest *anchor* (or
+    the longest, with no anchor), as a node list.
+
+    Stretches are connected components of the edges that carry the name, so
+    same-named streets in different parts of London never merge.
+    """
+    from .aliases import _iter_names
+
+    node_set = set(nodes)
+    parent = {n: n for n in node_set}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for u, v, data in G.subgraph(node_set).edges(data=True):
+        if any(_normalise_name(name) == canonical for name in _iter_names(data)):
+            ru, rv = find(u), find(v)
+            if ru != rv:
+                parent[ru] = rv
+    stretches: dict = {}
+    for n in node_set:
+        stretches.setdefault(find(n), []).append(n)
+    groups = list(stretches.values())
+    if len(groups) == 1:
+        return groups[0]
+    if anchor is None:
+        return max(groups, key=len)
+
+    def distance(group):
+        return min(_haversine(anchor[0], anchor[1], G.nodes[n]["y"], G.nodes[n]["x"])
+                   for n in group)
+
+    # Single stray nodes (a cross street's end) only win if nothing else is near.
+    return min(groups, key=lambda g: (distance(g) + (500.0 if len(g) < 2 else 0.0)))
 
 
 # ---------------------------------------------------------------------------
@@ -751,6 +1052,69 @@ def _closest_node(G, lat: float, lon: float, candidates) -> int | None:
             best_d = d
             best = nid
     return best
+
+
+def _local_xy(lat0: float, lon0: float, lat: float, lon: float) -> tuple[float, float]:
+    """Metres east/north of (lat0, lon0); exact enough over a few hundred m."""
+    k = 111_320.0
+    return (lon - lon0) * k * math.cos(math.radians(lat0)), (lat - lat0) * k
+
+
+def _edge_polyline(G, u, v, data) -> list[tuple[float, float]]:
+    """(lat, lon) vertices of an edge, from its geometry when it has one."""
+    geom = data.get("geometry")
+    if geom is not None and hasattr(geom, "coords"):
+        return [(y, x) for x, y in geom.coords]
+    return [(G.nodes[u]["y"], G.nodes[u]["x"]), (G.nodes[v]["y"], G.nodes[v]["x"])]
+
+
+def kerb_snap(G, lat: float, lon: float, max_kerb_m: float = 25.0, k: int = 60):
+    """Set down at the kerb: the nearest point on a snappable road to
+    (*lat*, *lon*), and the graph node a route ends at for it.
+
+    Returns ``(node, kerb_m, along_m)``: ``kerb_m`` from the point to the
+    road, ``along_m`` from the kerb point along the road to ``node`` (the
+    nearer end of that edge able to start and end a route). ``None`` when no
+    snappable road passes within ``max_kerb_m``.
+
+    Node distance alone misjudges a way in on a long block: Earl's Court
+    station's entrance is on Earl's Court Road, yet 63 m from the nearest
+    junction node.
+    """
+    tree, ids = _get_ball_tree(G)
+    import numpy as np
+
+    _d, idxs = tree.query(np.deg2rad([[lat, lon]]), k=min(k, len(ids)))
+    dual = _dual_carriageway_edges(G)
+    seen = set()
+    best = None
+    for idx in idxs[0]:
+        nid = int(ids[idx])
+        for u, v, data in list(G.out_edges(nid, data=True)) + list(G.in_edges(nid, data=True)):
+            if (u, v) in seen or not _edge_is_snappable(data, dual, (u, v)):
+                continue
+            seen.add((u, v))
+            pts = [_local_xy(lat, lon, la, lo) for la, lo in _edge_polyline(G, u, v, data)]
+            walked = 0.0
+            lengths = [math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+            total = sum(lengths) or 1e-9
+            for i in range(len(pts) - 1):
+                (x1, y1), (x2, y2) = pts[i], pts[i + 1]
+                seg = lengths[i]
+                t = 0.0 if seg == 0 else max(0.0, min(1.0, -(x1 * (x2 - x1) + y1 * (y2 - y1)) / (seg * seg)))
+                px, py = x1 + t * (x2 - x1), y1 + t * (y2 - y1)
+                d = math.hypot(px, py)
+                if best is None or d < best[0]:
+                    best = (d, u, v, walked + t * seg, total)
+                walked += seg
+    if best is None or best[0] > max_kerb_m:
+        return None
+    kerb_m, u, v, at, total = best
+    ends = sorted(((at, u), (total - at, v)))
+    for along, node in ends:
+        if _node_is_routable(G, node):
+            return node, kerb_m, along
+    return None
 
 
 def semantic_snap(

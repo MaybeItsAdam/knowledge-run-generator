@@ -154,7 +154,21 @@ class Session:
                 alias_index=self._alias_index,
                 osm_pois=osm_pois,
                 knowledge_pois=load_knowledge_pois(self._knowledge_pois_path),
+                access=self._load_access() if self._use_osm_pois else None,
             )
+
+    def _load_access(self) -> dict | None:
+        """Station entrances and park gates from ``krg osm-access``, if
+        harvested. Never fetched from here, like the POI harvest."""
+        import os
+
+        from .osm_access import load_access
+
+        return load_access(
+            os.environ.get("KRG_OSM_ACCESS"),
+            Path(__file__).resolve().parent.parent / "constants" / "osm_access.json",
+            self._cache_dir / "osm_access.json",
+        ) or None
 
     def _load_osm_pois(self) -> dict | None:
         """Load the cached OSM POI dict if the user has harvested one.

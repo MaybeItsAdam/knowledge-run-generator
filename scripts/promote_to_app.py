@@ -73,7 +73,19 @@ def validate_runs(expected: int) -> tuple[bool, list[int]]:
     missing = [i for i in range(1, expected + 1) if i not in present]
     print(f"  runs: {len(present)}/{expected} present"
           + (f" — MISSING {missing}" if missing else " ✓"))
-    return not missing, missing
+    # Names and points: every run is TfL Annex B's, and no two different
+    # places share a coordinate (the signature of a geocoder fallback).
+    from knowledge_run_generator.endpoint_guard import (
+        check_run_collisions, check_runs_match_annex_b,
+    )
+    guard = check_runs_match_annex_b(runs) + check_run_collisions(runs)
+    for problem in guard[:10]:
+        print(f"  ! {problem}")
+    if len(guard) > 10:
+        print(f"  ! ... and {len(guard) - 10} more")
+    if not guard:
+        print("  endpoints: names match TfL Annex B, no shared coordinates ✓")
+    return not missing and not guard, missing
 
 
 def _sample(names: list[str], limit: int = 5) -> str:
