@@ -220,6 +220,11 @@ def _constraint_anchor_summary(G, constraint, street_to_nodes):
     """
     if constraint.kind == "NODE":
         nodes = [n for n in constraint.key if n in G.nodes]
+    elif getattr(constraint, "nodes", None) is not None:
+        # Localised: the anchor is the instance the run drives, not the
+        # centroid of every same-named street in London (which also made
+        # the corridor bbox span the city).
+        nodes = [n for n in constraint.nodes if n in G.nodes]
     else:
         nodes = [n for n in (street_to_nodes or {}).get(constraint.key, ())
                  if n in G.nodes]
@@ -285,9 +290,15 @@ def get_ordered_route(G, origin_node, dest_node, constraints,
         if summary is None:
             continue
         clat, clon, radius, _ = summary
-        pad = radius / 111_000.0
-        lats.extend((clat - pad, clat + pad))
-        lons.extend((clon - pad, clon + pad))
+        # `radius` is metres under _euclid_m's 0.6 longitude scale, so a
+        # degree of longitude is only 0.6 x 111 km: padding both axes by
+        # radius / 111 km clipped the far ends of long east-west streets out
+        # of the corridor. It went unnoticed while unlocalised anchors
+        # spanned half of London.
+        pad_lat = radius / 111_000.0
+        pad_lon = radius / (111_000.0 * 0.6)
+        lats.extend((clat - pad_lat, clat + pad_lat))
+        lons.extend((clon - pad_lon, clon + pad_lon))
     if corridor_margin_deg is None:
         # No corridor. The T3 fallback needs this: a run whose prescribed
         # river crossing is closed (Hammersmith Bridge) can only route via
@@ -393,7 +404,8 @@ def get_ordered_route(G, origin_node, dest_node, constraints,
             if idx < K:
                 c = C[idx]
                 if c.kind == "STREET":
-                    advance = c.key in names
+                    advance = c.key in names and (
+                        c.nodes is None or (u in c.nodes and v in c.nodes))
                 else:
                     summary = anchors[idx]
                     advance = (summary is not None and summary[3] is not None
@@ -446,7 +458,8 @@ def get_ordered_route(G, origin_node, dest_node, constraints,
 def route_ordered_with_ladder(G, origin_node, dest_node, constraints,
                               prohibited_turns=None, street_to_nodes=None,
                               max_demotions=8, max_states=MAX_ORDERED_STATES,
-                              compute_optimum=False):
+                              compute_optimum=False, demote_loops=True,
+                              min_lap_m=0.0, leg_loops=True):
     """Degradation ladder around :func:`get_ordered_route` — every gap explicit.
 
     T0  all constraints enforced                        -> ``ordered_strict``
@@ -454,31 +467,83 @@ def route_ordered_with_ladder(G, origin_node, dest_node, constraints,
     T2  keep only hard (exact/junction) constraints     -> ``ordered_partial``
     T3  plain shortest path                             -> ``shortest_path``
 
+    A route that forces a loop (:func:`find_forced_loop`) is repaired by
+    demoting the constraint responsible, on trial: the demotion stands only
+    if the route gets shorter. Those demotions are also listed in
+    ``meta.loop_demotions``. ``min_lap_m`` / ``leg_loops`` narrow what counts
+    as a loop (see :func:`find_forced_loop`); the Blue Book run itself uses
+    laps of at least LOOP_EXCESS_M only, because a prescribed run may
+    legitimately go round a block to reach its next street.
+
     Returns ``(route_nodes, meta)``; ``meta.demoted`` lists every constraint
     dropped on the way to a route, as ``(raw, source)`` pairs.
     """
     active = list(constraints)
     demoted = []
+    loop_demotions = []
     mode = "ordered_strict"
     attempts = 0
     last_info = {}
 
-    for _ in range(max_demotions + 1):
-        route, info = get_ordered_route(
-            G, origin_node, dest_node, active,
+    def search(cons):
+        nonlocal attempts
+        attempts += 1
+        return get_ordered_route(
+            G, origin_node, dest_node, cons,
             prohibited_turns=prohibited_turns,
             street_to_nodes=street_to_nodes,
             max_states=max_states,
         )
-        attempts += 1
+
+    def repair_loops(route, info, cons):
+        """Demote constraints that force loops while that shortens the route.
+
+        A route that exists can still be absurd: the ordered search will
+        happily lap a gyratory, or drive a kilometre round the block, to meet
+        a constraint in sequence. Each suspect is demoted on trial and kept
+        demoted only if the route gets at least LOOP_MIN_GAIN_M shorter — an
+        innocent suspect is reinstated.
+        """
+        cons = list(cons)
+        dropped = []
+        while demote_loops and len(dropped) < max_demotions:
+            suspects = find_forced_loop(G, route, cons, prohibited_turns,
+                                        all_suspects=True, min_lap_m=min_lap_m,
+                                        leg_loops=leg_loops)
+            if not suspects:
+                break
+            length = _route_length(G, route)
+            for k in suspects[:LOOP_MAX_TRIALS]:
+                trial = cons[:k] + cons[k + 1:]
+                r2, i2 = search(trial)
+                if r2 is not None and _route_length(G, r2) <= length - LOOP_MIN_GAIN_M:
+                    dropped.append(cons[k])
+                    cons, route, info = trial, r2, i2
+                    break
+            else:
+                break
+        return route, info, cons, dropped
+
+    def finish(route, info, cons, mode_now):
+        meta = _ordered_meta(G, route, info, mode_now, demoted, attempts)
+        if loop_demotions:
+            meta["loop_demotions"] = list(loop_demotions)
+        if compute_optimum:
+            meta["ordered_optimum_m"] = _ordered_optimum(
+                G, origin_node, dest_node, cons,
+                prohibited_turns, street_to_nodes, max_states)
+        return route, meta
+
+    for _ in range(max_demotions + 1):
+        route, info = search(active)
         last_info = info
         if route is not None:
-            meta = _ordered_meta(G, route, info, mode, demoted, attempts)
-            if compute_optimum:
-                meta["ordered_optimum_m"] = _ordered_optimum(
-                    G, origin_node, dest_node, active,
-                    prohibited_turns, street_to_nodes, max_states)
-            return route, meta
+            route, info, active, dropped = repair_loops(route, info, active)
+            for victim in dropped:
+                demoted.append((victim.raw, victim.source))
+                loop_demotions.append((victim.raw, victim.source))
+                mode = "ordered_relaxed"
+            return finish(route, info, active, mode)
         if not active:
             break
         # Pick the demotion victim. Demoting on cap-hit rather than treating
@@ -516,21 +581,14 @@ def route_ordered_with_ladder(G, origin_node, dest_node, constraints,
         for c in constraints:
             if not c.hard and (c.raw, c.source) not in demoted:
                 demoted.append((c.raw, c.source))
-        route, info = get_ordered_route(
-            G, origin_node, dest_node, hard_only,
-            prohibited_turns=prohibited_turns,
-            street_to_nodes=street_to_nodes,
-            max_states=max_states,
-        )
-        attempts += 1
+        route, info = search(hard_only)
         last_info = info
         if route is not None:
-            meta = _ordered_meta(G, route, info, "ordered_partial", demoted, attempts)
-            if compute_optimum:
-                meta["ordered_optimum_m"] = _ordered_optimum(
-                    G, origin_node, dest_node, hard_only,
-                    prohibited_turns, street_to_nodes, max_states)
-            return route, meta
+            route, info, hard_only, dropped = repair_loops(route, info, hard_only)
+            for victim in dropped:
+                demoted.append((victim.raw, victim.source))
+                loop_demotions.append((victim.raw, victim.source))
+            return finish(route, info, hard_only, "ordered_partial")
 
     # T3 — the honest fallback. Still filtered for prohibited turns via the
     # ordered search with zero constraints (plain A* with the same expansion),
@@ -556,6 +614,81 @@ def route_ordered_with_ladder(G, origin_node, dest_node, constraints,
     meta = _ordered_meta(G, None, last_info, "unroutable", demoted, attempts)
     meta["status"] = "failed"
     return None, meta
+
+
+def shortest_legal_length(G, origin_node, dest_node, prohibited_turns=None,
+                          max_states=MAX_ORDERED_STATES):
+    """Length (m) of the unconstrained shortest legal route, or ``None``.
+
+    Pure edge length, prohibited turns honoured, no corridor — the yardstick
+    the gross-detour gate measures a run against.
+    """
+    _, info = get_ordered_route(
+        G, origin_node, dest_node, [],
+        prohibited_turns=prohibited_turns,
+        max_states=max_states,
+        corridor_margin_deg=None,
+        pure_length_cost=True,
+    )
+    cost = info.get("goal_cost")
+    return round(cost, 1) if cost is not None else None
+
+
+# Budget for the reverse run. The reverse is not prescribed by the Blue Book;
+# reversing the constraint sequence is only a proxy for it, and where one-ways
+# make the reversal a tour of the neighbourhood the student is better served
+# by the shortest legal route. The reversed-sequence route is kept while it is
+# within REVERSE_FWD_SLACK x the forward run or REVERSE_SHORTEST_RATIO x the
+# shortest legal route, whichever allows more.
+REVERSE_FWD_SLACK = 1.25
+REVERSE_SHORTEST_RATIO = 1.5
+
+
+def route_reverse(G, origin_node, dest_node, constraints, forward_length_m=None,
+                  prohibited_turns=None, street_to_nodes=None,
+                  max_states=MAX_ORDERED_STATES,
+                  fwd_slack=REVERSE_FWD_SLACK,
+                  shortest_ratio=REVERSE_SHORTEST_RATIO):
+    """Route the reverse of a run: the reversed constraint sequence through
+    the ladder, unless that is out of budget, in which case the shortest
+    legal route (``routing_mode: shortest_path``, ``reverse_fallback`` set).
+
+    ``origin_node``/``dest_node`` are the reverse's own start and end, i.e.
+    the forward run's end and start.
+    """
+    route, meta = route_ordered_with_ladder(
+        G, origin_node, dest_node, list(constraints),
+        prohibited_turns=prohibited_turns,
+        street_to_nodes=street_to_nodes,
+        max_states=max_states,
+    )
+    shortest = shortest_legal_length(G, origin_node, dest_node,
+                                     prohibited_turns=prohibited_turns,
+                                     max_states=max_states)
+    meta["shortest_m"] = shortest
+    if route is None or shortest is None or meta.get("routing_mode") == "shortest_path":
+        return route, meta
+    length = _route_length(G, route)
+    budget = shortest * shortest_ratio
+    if forward_length_m:
+        budget = max(budget, forward_length_m * fwd_slack)
+    if length <= budget:
+        return route, meta
+    fallback, info = get_ordered_route(
+        G, origin_node, dest_node, [],
+        prohibited_turns=prohibited_turns,
+        max_states=max_states,
+        corridor_margin_deg=None,
+    )
+    if fallback is None:
+        return route, meta
+    demoted = [(c.raw, c.source) for c in constraints]
+    fb_meta = _ordered_meta(G, fallback, info, "shortest_path", demoted,
+                            meta.get("ladder_attempts", 0) + 1)
+    fb_meta["shortest_m"] = shortest
+    fb_meta["reverse_fallback"] = (
+        f"reversed sequence {length:.0f}m over budget {budget:.0f}m")
+    return fallback, fb_meta
 
 
 def _ordered_optimum(G, origin_node, dest_node, active_constraints,
@@ -599,7 +732,13 @@ def constraint_waypoints(G, route_nodes, constraints):
     """Derive display waypoints from the routed path: the node at which each
     constraint is first satisfied, in order. Strictly more accurate than the
     old intersection guesses, and free."""
-    waypoints = []
+    return [route_nodes[i] for i in _constraint_positions(G, route_nodes, constraints)]
+
+
+def _constraint_positions(G, route_nodes, constraints):
+    """Route indices at which each constraint is first satisfied, in order
+    (greedy walk; stops at the first constraint the route never meets)."""
+    positions = []
     idx = 0
     C = list(constraints)
     # Leading junctions the route starts on are satisfied at the origin, as
@@ -607,7 +746,7 @@ def constraint_waypoints(G, route_nodes, constraints):
     # junction that never comes, and every later constraint goes unplaced.
     if route_nodes:
         while idx < len(C) and C[idx].kind != "STREET" and route_nodes[0] in C[idx].key:
-            waypoints.append(route_nodes[0])
+            positions.append(0)
             idx += 1
     for i in range(1, len(route_nodes)):
         if idx >= len(C):
@@ -615,14 +754,135 @@ def constraint_waypoints(G, route_nodes, constraints):
         u, v = route_nodes[i - 1], route_nodes[i]
         c = C[idx]
         if c.kind == "STREET":
-            if c.key in edge_name_set(G, u, v):
-                waypoints.append(v)
+            if c.matches_edge(edge_name_set(G, u, v), u, v):
+                positions.append(i)
                 idx += 1
         else:
             if v in c.key:
-                waypoints.append(v)
+                positions.append(i)
                 idx += 1
-    return waypoints
+    return positions
+
+
+# A leg (route between two consecutive constraint positions) longer than the
+# shortest legal route between its ends by more than this — and by more than
+# LOOP_LEG_RATIO x — is a loop the constraint sequence forced: the reversed
+# run approaching a one-way from the wrong end, or Blue Book text written for
+# a gyratory that has since been remodelled (Archway). A Knowledge run never
+# drives round the block twice to tick off a street.
+LOOP_EXCESS_M = 1000.0
+LOOP_LEG_RATIO = 2.0
+# A loop demotion is kept only if it shortens the route by at least this;
+# otherwise the suspect was innocent and is reinstated.
+LOOP_MIN_GAIN_M = 250.0
+# Suspects tried per loop before the loop is accepted as unavoidable.
+LOOP_MAX_TRIALS = 4
+
+
+def _route_length(G, route_nodes):
+    return _leg_length(G, route_nodes, 0, len(route_nodes) - 1)
+
+
+def _leg_length(G, route_nodes, a, b):
+    total = 0.0
+    for i in range(a, b):
+        best = _best_edge_data(G.get_edge_data(route_nodes[i], route_nodes[i + 1]))
+        if best:
+            total += float(best.get("length", 0) or 0)
+    return total
+
+
+def find_forced_loop(G, route_nodes, constraints, prohibited_turns=None,
+                     loop_excess_m=LOOP_EXCESS_M, loop_leg_ratio=LOOP_LEG_RATIO,
+                     all_suspects=False, min_lap_m=0.0, leg_loops=True):
+    """The constraint that forced a loop into *route_nodes*, or None.
+
+    Two symptoms (a *leg* is the connector the route drives to reach a
+    constraint, after it leaves the previous one; the final leg runs on to
+    the destination and is blamed on the last constraint):
+
+    * the route drives the same directed edge twice — a lap (of at least
+      ``min_lap_m``, measured from the first traversal to the repeat).
+      Suspects are the constraints satisfied inside the lap, latest first
+      (the lap exists to deliver them), then the one whose leg contains the
+      repeat;
+    * with ``leg_loops``, a leg is more than ``loop_leg_ratio`` x, and
+      ``loop_excess_m`` longer than, the shortest legal route between its two
+      ends. Suspects are the owners of such legs, worst first.
+
+    Returns the index of the prime suspect, or with ``all_suspects`` the list
+    of suspect indices in order (empty when there is no loop).
+    """
+    C = list(constraints)
+    none = [] if all_suspects else None
+    if not C or not route_nodes or len(route_nodes) < 3:
+        return none
+    positions = _constraint_positions(G, route_nodes, C)
+    if not positions:
+        return none
+    last = len(route_nodes) - 1
+    # Leg k ends at bounds[k+1] and is blamed on owners[k].
+    bounds = [0] + positions + [last]
+    owners = list(range(len(positions))) + [len(positions) - 1]
+
+    def owner_of(edge_end):
+        for k in range(len(owners)):
+            if bounds[k] < edge_end <= bounds[k + 1]:
+                return owners[k]
+        return owners[-1]
+
+    def result(suspects):
+        ordered = list(dict.fromkeys(suspects))
+        if all_suspects:
+            return ordered
+        return ordered[0] if ordered else None
+
+    first_seen = {}
+    for i in range(1, len(route_nodes)):
+        edge = (route_nodes[i - 1], route_nodes[i])
+        if edge in first_seen:
+            if _leg_length(G, route_nodes, first_seen[edge], i) >= min_lap_m:
+                inside = [k for k, p in enumerate(positions)
+                          if first_seen[edge] < p < i]
+                return result(list(reversed(inside)) + [owner_of(i)])
+            continue
+        first_seen[edge] = i
+
+    # Leg starts move past the stretch the route keeps driving on the street
+    # it just satisfied: a Blue Book run drives the whole street, which is
+    # prescribed, not a loop. What is left is the connector to the next one.
+    def stay_end(k, limit):
+        j = positions[k]
+        c = C[k]
+        while j < limit:
+            u, v = route_nodes[j], route_nodes[j + 1]
+            on = (c.key in edge_name_set(G, u, v)) if c.kind == "STREET" else (v in c.key)
+            if not on:
+                break
+            j += 1
+        return j
+
+    if not leg_loops:
+        return result([])
+    starts = [0] + [stay_end(k, bounds[k + 2]) for k in range(len(positions))]
+
+    loops = []
+    for k, owner in enumerate(owners):
+        a, b = starts[k], bounds[k + 1]
+        if b - a < 2:
+            continue
+        leg = _leg_length(G, route_nodes, a, b)
+        if leg < loop_excess_m:
+            continue
+        shortest = shortest_legal_length(
+            G, route_nodes[a], route_nodes[b], prohibited_turns=prohibited_turns)
+        if shortest is None:
+            continue
+        excess = leg - shortest
+        if excess > loop_excess_m and leg > shortest * loop_leg_ratio:
+            loops.append((excess, owner))
+    loops.sort(reverse=True)
+    return result([owner for _excess, owner in loops])
 
 
 def _extract_route_metadata(G, route_nodes):

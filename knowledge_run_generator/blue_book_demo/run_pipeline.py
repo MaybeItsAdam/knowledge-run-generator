@@ -25,10 +25,12 @@ from knowledge_run_generator.geocoder import geocode_address, geocode_and_snap, 
 from knowledge_run_generator.router import (
     load_graph, get_route,
     nodes_to_coords_geometry, _extract_route_metadata,
-    route_ordered_with_ladder, constraint_waypoints,
+    route_ordered_with_ladder, constraint_waypoints, shortest_legal_length,
+    route_reverse, LOOP_EXCESS_M,
 )
 from knowledge_run_generator.validator import (
-    check_constraint_order, check_run_shape, load_turn_restrictions,
+    check_constraint_order, check_route_sanity, check_run_shape,
+    check_turn_legality, load_turn_restrictions,
     validate_route, ValidationResult,
 )
 from knowledge_run_generator.geojson_export import route_to_geojson_feature, export_all_runs_geojson
@@ -42,6 +44,7 @@ from knowledge_run_generator.constraints import (
     fuzzy_street_match as _fuzzy_street_match,
     is_roundabout_line,
 )
+from knowledge_run_generator.locality import localise_constraints
 from knowledge_run_generator.gazetteer import (
     DEFAULT_KNOWLEDGE_POIS_PATH, Gazetteer, load_knowledge_pois, preflight_run,
 )
@@ -61,7 +64,10 @@ from knowledge_run_generator import caller
 #    demoted_constraints, hard_gaps, constraint_gaps/sources, ring_laps,
 #    ordered_optimum_m / excess_over_ordered_optimum, district plausibility;
 #    `passed` now gates on legality + ordered traversal + no hard gaps.
-QA_SCHEMA_VERSION = 4
+# 5: constraints are localised (remote_constraints); `passed` also requires
+#    both directions to be sane (no gross detour, inside the six-mile area)
+#    and the reverse to be legal — sane / sanity_reasons / shortest_m / ...
+QA_SCHEMA_VERSION = 5
 
 
 def _json_default(o):
@@ -735,6 +741,20 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 junction_index=junction_index, G=G,
                 spelling_fixes=load_street_spelling_fixes(),
             )
+            # Pin each constraint to the instance of its name near this run.
+            # Unlocalised, a STREET constraint is met by *any* same-named
+            # edge in London, so an unreachable local instance sent the
+            # search to a namesake kilometres away (run 150 via Twickenham).
+            # A constraint with no instance anywhere near the run is a
+            # resolution error, recorded as a gap rather than routed to.
+            localised = localise_constraints(
+                G, compiled.constraints, start_node, end_node)
+            compiled.constraints = localised.constraints
+            remote_constraints = localised.remote
+            if remote_constraints:
+                compiled.gaps.extend(r["raw"] for r in remote_constraints)
+                print(f"  [localise] {len(remote_constraints)} remote constraint(s) "
+                      f"dropped: {[(r['raw'], r['excess_m']) for r in remote_constraints]}")
             if compiled.gaps:
                 print(f"  [compile] {len(compiled.gaps)} gap(s): {compiled.gaps[:4]}")
             route_nodes, fwd_route_meta = route_ordered_with_ladder(
@@ -742,6 +762,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 prohibited_turns=run_prohibited_turns,
                 street_to_nodes=street_index_pure,
                 compute_optimum=True,
+                # The prescribed run may go round a block to reach its next
+                # street; only a real lap (>= 1 km, e.g. three times round
+                # the Archway gyratory for run 238) is repaired.
+                min_lap_m=LOOP_EXCESS_M, leg_loops=False,
             )
             # A hard constraint the ladder had to demote is a hard gap: the
             # route exists, but it provably does not drive the Blue Book
@@ -765,6 +789,10 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             validation = None
             waypoint_nodes = []
             full_order_metrics = {}
+            # Yardstick for the gross-detour gate: the shortest legal route
+            # between the same two nodes, ignoring the Blue Book sequence.
+            run_config["shortest_m"] = shortest_legal_length(
+                G, start_node, end_node, prohibited_turns=run_prohibited_turns)
             if route_nodes and len(route_nodes) >= 2:
                 waypoint_nodes = constraint_waypoints(
                     G, route_nodes, compiled.constraints)
@@ -797,7 +825,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 }
                 continue
 
-            status = "PASS" if validation.passed else "FAIL"
+            status = "PASS" if validation.passed else "FAIL"  # forward only; BA below
             metrics = validation.directness_metrics
             print(f"  [{status}] ratio={metrics.get('ratio', '?')}, "
                   f"offset={metrics.get('max_lateral_offset_m', '?')}m, "
@@ -806,14 +834,17 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             if corrections:
                 print(f"  Corrections applied: {len(corrections)}")
 
-            # ----- Reverse route (same treatment) -----
+            # ----- Reverse route -----
             # The reverse of a Blue Book run is not officially prescribed;
             # reversing the constraint sequence is the best available
             # approximation, and the ladder absorbs the one-ways that make a
-            # literal reversal illegal.
+            # literal reversal illegal. Where the reversal turns into a tour
+            # of the one-way system, route_reverse falls back to the shortest
+            # legal route instead (run 5's reverse was 31.9 km).
             rev_constraints = list(reversed(compiled.constraints))
-            rev_route_nodes, rev_route_meta = route_ordered_with_ladder(
+            rev_route_nodes, rev_route_meta = route_reverse(
                 G, end_node, start_node, rev_constraints,
+                forward_length_m=_extract_route_metadata(G, route_nodes)["total_distance"],
                 prohibited_turns=run_prohibited_turns,
                 street_to_nodes=street_index_pure,
             )
@@ -823,6 +854,26 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 rev_route_nodes = get_route(G, (end_lat, end_lon), (start_lat, start_lon))
                 if not rev_route_nodes:
                     rev_route_nodes = []
+
+            # The reverse ships to users too, so it faces the same hard gate
+            # as the forward route: legal, no gross detour, inside the area.
+            # (It used to face none, which is how run 5's 31.9 km BA shipped.)
+            rev_shortest_m = rev_route_meta.get("shortest_m")
+            if rev_shortest_m is None:
+                rev_shortest_m = shortest_legal_length(
+                    G, end_node, start_node, prohibited_turns=run_prohibited_turns)
+            rev_legal, rev_turn_violations = check_turn_legality(
+                rev_route_nodes, run_prohibited_turns or set(),
+                exempted_turns=exempted_turns or None)
+            rev_sane, rev_sanity, rev_sanity_reasons = check_route_sanity(
+                G, rev_route_nodes, end_node, start_node, shortest_m=rev_shortest_m)
+            for reason in validation.sanity_reasons:
+                print(f"  [sanity-fail] AB {reason}")
+            for reason in rev_sanity_reasons:
+                print(f"  [sanity-fail] BA {reason}")
+            if not rev_legal:
+                print(f"  [legality-fail] BA {len(rev_turn_violations)} prohibited turn(s)")
+            run_passed = validation.passed and rev_legal and rev_sane
 
             # ----- Convert to coordinates -----
             route_coords = nodes_to_coords_geometry(G, route_nodes)
@@ -902,7 +953,7 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
             qa_results[str(run_id)] = {
                 "status": "ok" if not shape_problems else "failed",
                 "shape_problems": shape_problems,
-                "passed": validation.passed,
+                "passed": run_passed,
                 "ratio": metrics.get("ratio"),
                 "max_offset_m": metrics.get("max_lateral_offset_m"),
                 "legal": validation.is_legal,
@@ -926,6 +977,22 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 "truncated_legs": fwd_meta.get("truncated_legs", 0),
                 "fwd_distance_m": fwd_distance,
                 "rev_distance_m": rev_distance,
+                # Hard sanity gate, both directions (validator.check_route_sanity):
+                # gross detour vs the straight line and vs the shortest legal
+                # route, and excursions outside the six-mile radius.
+                "sane": bool(validation.is_sane and rev_sane),
+                "sanity_reasons": (
+                    [f"AB {r}" for r in validation.sanity_reasons]
+                    + [f"BA {r}" for r in rev_sanity_reasons]),
+                "shortest_m": run_config.get("shortest_m"),
+                "rev_shortest_m": rev_shortest_m,
+                "shortest_ratio": validation.sanity_metrics.get("shortest_ratio"),
+                "rev_shortest_ratio": rev_sanity.get("shortest_ratio"),
+                "straight_ratio": validation.sanity_metrics.get("straight_ratio"),
+                "rev_straight_ratio": rev_sanity.get("straight_ratio"),
+                "radius_excess_m": validation.sanity_metrics.get("radius_excess_m"),
+                "rev_radius_excess_m": rev_sanity.get("radius_excess_m"),
+                "rev_legal": rev_legal,
                 # Geometry identity, so the regression harness can see a route
                 # change without the baseline having to carry the geometry.
                 "node_count": len(route_nodes),
@@ -950,9 +1017,17 @@ def process_runs(output_file, limit=None, export_geojson=False, network_type=Non
                 # and what was given up on the way down.
                 "routing_mode": fwd_route_meta.get("routing_mode"),
                 "rev_routing_mode": rev_route_meta.get("routing_mode"),
+                "rev_fallback": rev_route_meta.get("reverse_fallback"),
+                # Constraints the ladder demoted because they forced a loop
+                # (router.find_forced_loop), per direction.
+                "loop_demotions": fwd_route_meta.get("loop_demotions") or [],
+                "rev_loop_demotions": rev_route_meta.get("loop_demotions") or [],
                 "demoted_constraints": fwd_route_meta.get("demoted_constraints") or [],
                 "hard_gaps": run_config.get("hard_gaps", 0),
                 "constraint_gaps": compiled.gaps,
+                # Constraints whose every instance lies far off the run —
+                # a wrong resolution, dropped instead of routed to.
+                "remote_constraints": remote_constraints,
                 "constraint_sources": compiled.source_histogram(),
                 "hit_state_cap": bool(fwd_route_meta.get("hit_state_cap")),
                 "states_explored": fwd_route_meta.get("states_explored"),

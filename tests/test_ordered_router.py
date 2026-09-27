@@ -128,6 +128,33 @@ class OrderedSearchTests(unittest.TestCase):
         self.assertIn(6, route)
 
 
+class CorridorTests(unittest.TestCase):
+    def test_corridor_reaches_the_far_end_of_an_east_west_street(self):
+        # The corridor pads each anchor by its radius. The radius is metres
+        # under a 0.6 longitude scale, so padding longitude by radius/111 km
+        # (as latitude) fell short and clipped the far end of long east-west
+        # streets. Here most of Long Road's indexed nodes lie west of the
+        # run, and the only drivable piece is 5.5 km east.
+        G = nx.MultiDiGraph()
+        lat = 51.5
+        for n, lon in ((1, 0.0), (2, 0.001), (11, 0.075), (12, 0.08),
+                       (30, -0.04), (31, -0.0401), (32, -0.0402)):
+            G.add_node(n, x=lon, y=lat)
+
+        def road(u, v, name, length):
+            G.add_edge(u, v, length=length, name=name, highway="residential")
+            G.add_edge(v, u, length=length, name=name, highway="residential")
+
+        road(1, 2, "Main Street", 70.0)
+        road(2, 11, "Link Road", 5100.0)
+        road(11, 12, "Long Road", 350.0)
+        index = {"LONG ROAD": {30, 31, 32, 11, 12}}
+        route, info = get_ordered_route(
+            G, 1, 2, [street("Long Road")], street_to_nodes=index)
+        self.assertTrue(info["reached_goal"])
+        self.assertIn(12, route)
+
+
 class LadderTests(unittest.TestCase):
     def setUp(self):
         self.G = _grid()
