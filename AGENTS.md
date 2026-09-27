@@ -17,9 +17,17 @@ reported but non-gating; why both ordered metrics are tracked).
   is cut, which is how OSM maps LTN modal filters. The module docstring is
   the full record of tag decisions; change a rule there and in its test.
   Turn restrictions with `except=psv`/`taxi` do not bind the taxi profile.
-- The taxi graph is cached as `london_taxi_v1.graphml` with a sidecar
-  `london_taxi_v1.taxi_rules.json` (closed ways, destination-only ways,
-  contraflows, blocking barriers). Delete both to rebuild: the 2026-09
+- Temporary closures (`TEMPORARY_CLOSURES` in `taxi_profile.py`, currently
+  Albert Bridge) are treated as open: a temporary closure must not
+  permanently reroute a run or move its endpoint. A run whose route crosses
+  one ships `route_notice` ("Albert Bridge is temporarily closed. The route
+  shown is the normal one."). Every entry carries a note saying why and
+  when to remove it. Hammersmith Bridge is long-running and deliberately
+  not on the list. Adding or removing an entry means bumping
+  `TAXI_GRAPH_VERSION`, because the cached graph bakes the closures in.
+- The taxi graph is cached as `london_taxi_v2.graphml` with a sidecar
+  `london_taxi_v2.taxi_rules.json` (closed ways, destination-only ways,
+  contraflows, blocking barriers, temporary closures). Delete both to rebuild: the 2026-09
   build took 19 minutes wall clock and 3.1 GB peak memory, almost all of it
   waiting on Overpass and writing the 179 MB graphml (98 s of CPU). The
   named-filter harvest used only to explain failures is cached separately
